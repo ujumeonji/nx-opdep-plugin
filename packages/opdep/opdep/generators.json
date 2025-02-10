@@ -1,0 +1,9 @@
+{
+  "generators": {
+    "analyze-deps": {
+      "factory": "./src/generators/analyze-deps/generator",
+      "schema": "./src/generators/analyze-deps/schema.json",
+      "description": "analyze-deps generator"
+    }
+  }
+}

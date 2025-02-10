@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "cli": "nx",
+  "$id": "analyze-deps",
+  "title": "Analyze Dependencies",
+  "type": "object",
+  "properties": {
+    "projectName": {
+      "type": "string",
+      "description": "The name of the project to analyze",
+      "$default": {
+        "$source": "argv",
+        "index": 0
+      }
+    },
+    "outputPath": {
+      "type": "string",
+      "description": "The path where the optimized package.json should be generated",
+      "default": "optimized-package.json"
+    }
+  },
+  "required": ["projectName"]
+}
