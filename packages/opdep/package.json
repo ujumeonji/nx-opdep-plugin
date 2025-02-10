@@ -9,5 +9,8 @@
   "main": "./src/index.js",
   "typings": "./src/index.d.ts",
   "private": true,
-  "generators": "./generators.json"
+  "generators": "./generators.json",
+  "devDependencies": {
+    "ts-morph": "^25.0.1"
+  }
 }
