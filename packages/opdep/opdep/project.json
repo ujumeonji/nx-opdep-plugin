@@ -1,0 +1,51 @@
+{
+  "name": "opdep-opdep",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/opdep/opdep/src",
+  "projectType": "library",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/packages/opdep/opdep",
+        "main": "packages/opdep/opdep/src/index.ts",
+        "tsConfig": "packages/opdep/opdep/tsconfig.lib.json",
+        "assets": [
+          "packages/opdep/opdep/*.md",
+          {
+            "input": "./packages/opdep/opdep/src",
+            "glob": "**/!(*.ts)",
+            "output": "./src"
+          },
+          {
+            "input": "./packages/opdep/opdep/src",
+            "glob": "**/*.d.ts",
+            "output": "./src"
+          },
+          {
+            "input": "./packages/opdep/opdep",
+            "glob": "generators.json",
+            "output": "."
+          },
+          {
+            "input": "./packages/opdep/opdep",
+            "glob": "executors.json",
+            "output": "."
+          }
+        ]
+      }
+    },
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    },
+    "test": {
+      "executor": "@nx/jest:jest",
+      "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
+      "options": {
+        "jestConfig": "packages/opdep/opdep/jest.config.ts"
+      }
+    }
+  }
+}
