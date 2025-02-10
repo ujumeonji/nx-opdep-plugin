@@ -2,8 +2,7 @@
   "name": "@nx-plugin-opdep/opdep",
   "version": "0.0.1",
   "dependencies": {
-    "@nx/devkit": "19.8.4",
-    "ts-morph": "^25.0.1",
+    "@nx/devkit": "17.2.8",
     "tslib": "^2.3.0"
   },
   "type": "commonjs",
