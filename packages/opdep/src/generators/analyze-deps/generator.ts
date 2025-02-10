@@ -63,6 +63,22 @@ function isNodeModule(moduleSpecifier: string, context: ImportAnalysisContext): 
   );
 }
 
+function findPackageJson(tree: Tree, startPath: string): PackageJson | null {
+  // 먼저 프로젝트 디렉토리에서 package.json을 찾습니다
+  const projectPackageJsonPath = path.join(startPath, 'package.json');
+  if (tree.exists(projectPackageJsonPath)) {
+    return readJsonFromTree(tree, projectPackageJsonPath);
+  }
+
+  // 프로젝트 디렉토리에 없다면 루트 디렉토리의 package.json을 찾습니다
+  const rootPackageJsonPath = '/package.json';
+  if (tree.exists(rootPackageJsonPath)) {
+    return readJsonFromTree(tree, rootPackageJsonPath);
+  }
+
+  return null;
+}
+
 export async function analyzeDepsGenerator(
   tree: Tree,
   options: AnalyzeDepsGeneratorSchema
@@ -72,6 +88,13 @@ export async function analyzeDepsGenerator(
 
   if (!project) {
     throw new Error(`Project ${options.projectName} not found`);
+  }
+
+  const projectRoot = project.root;
+  const packageJson = findPackageJson(tree, projectRoot);
+
+  if (!packageJson) {
+    throw new Error('No package.json found in project or root directory');
   }
 
   const tsConfigPath = path.join(project.root, 'tsconfig.json');
@@ -94,15 +117,12 @@ export async function analyzeDepsGenerator(
     ...(tsConfig.compilerOptions?.paths || {})
   };
 
-  const packageJsonPath = path.join(project.root, 'package.json');
-  const originalPackageJson: PackageJson = readJsonFromTree(tree, packageJsonPath);
-
   const internalPatterns = (options.internalModulePatterns || []).map(createRegexPattern);
 
   const analysisContext: ImportAnalysisContext = {
     paths,
     internalPatterns,
-    packageJson: originalPackageJson,
+    packageJson,
     aliasPatterns: options.aliasPatterns
   };
 
@@ -160,21 +180,21 @@ export async function analyzeDepsGenerator(
   });
 
   const optimizedPackageJson: PackageJson = {
-    name: originalPackageJson.name,
-    version: originalPackageJson.version,
+    name: packageJson.name,
+    version: packageJson.version,
     dependencies: {},
     devDependencies: {},
-    peerDependencies: originalPackageJson.peerDependencies || {},
+    peerDependencies: packageJson.peerDependencies || {},
   };
 
   // Add only used dependencies
   analysis.externalImports.forEach((imports, packageName) => {
-    if (originalPackageJson.dependencies?.[packageName]) {
+    if (packageJson.dependencies?.[packageName]) {
       optimizedPackageJson.dependencies[packageName] =
-        originalPackageJson.dependencies[packageName];
-    } else if (originalPackageJson.devDependencies?.[packageName]) {
+        packageJson.dependencies[packageName];
+    } else if (packageJson.devDependencies?.[packageName]) {
       optimizedPackageJson.devDependencies[packageName] =
-        originalPackageJson.devDependencies[packageName];
+        packageJson.devDependencies[packageName];
     }
   });
 
