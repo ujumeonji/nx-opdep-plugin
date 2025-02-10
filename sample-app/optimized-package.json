@@ -1,0 +1,31 @@
+{
+  "name": "sample-app",
+  "version": "0.0.1",
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-router-dom": "^6.11.2",
+    "react-dom": "^18.3.1",
+    "@tanstack/react-query": "^5.66.0",
+    "axios": "^1.7.9",
+    "date-fns": "^4.1.0",
+    "lodash": "^4.17.21"
+  },
+  "devDependencies": {},
+  "peerDependencies": {},
+  "internalDependencies": {
+    "relative": [
+      "/Volumes/ExtrSSD/Repositories/side/nx-plugin-opdep/sample-app/src/app/app",
+      "/Volumes/ExtrSSD/Repositories/side/nx-plugin-opdep/sample-app/src/app/app.module.css"
+    ],
+    "alias": []
+  },
+  "usedImports": {
+    "react": ["StrictMode", "useState"],
+    "react-router-dom": ["BrowserRouter"],
+    "react-dom": [],
+    "@tanstack/react-query": ["QueryClient", "QueryClientProvider", "useQuery"],
+    "axios": ["default"],
+    "date-fns": ["format"],
+    "lodash": ["debounce"]
+  }
+}

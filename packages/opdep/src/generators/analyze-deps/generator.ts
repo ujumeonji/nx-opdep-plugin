@@ -12,7 +12,7 @@ interface PackageJson {
 }
 
 interface DependencyAnalysis {
-  externalImports: Set<string>;
+  externalImports: Map<string, Set<string>>; // package -> imported items
   internalImports: Set<string>;
   internalAliasImports: Set<string>;
 }
@@ -41,9 +41,26 @@ function writeJsonToTree(tree: Tree, filePath: string, content: any): void {
 }
 
 function createRegexPattern(pattern: string): RegExp {
-  // Escape special regex characters
   const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(escaped);
+}
+
+function extractPackageName(moduleSpecifier: string): string {
+  // Handle scoped packages
+  if (moduleSpecifier.startsWith('@')) {
+    return moduleSpecifier.split('/').slice(0, 2).join('/');
+  }
+  // Handle regular packages
+  return moduleSpecifier.split('/')[0];
+}
+
+function isNodeModule(moduleSpecifier: string, context: ImportAnalysisContext): boolean {
+  const packageName = extractPackageName(moduleSpecifier);
+  return !!(
+    context.packageJson.dependencies?.[packageName] ||
+    context.packageJson.devDependencies?.[packageName] ||
+    context.packageJson.peerDependencies?.[packageName]
+  );
 }
 
 export async function analyzeDepsGenerator(
@@ -91,11 +108,18 @@ export async function analyzeDepsGenerator(
 
   const tsProject = new Project({
     tsConfigFilePath: tsConfigPath,
-  });
+    skipAddingFilesFromTsConfig: true
+  })
 
-  const sourceFiles = tsProject.getSourceFiles();
+  const srcDir = path.join(project.root, 'src')
+  console.log('Source directory:', srcDir)
+  tsProject.addSourceFilesAtPaths(path.join(srcDir, '**/*.{ts,tsx}'))
+
+  const sourceFiles = tsProject.getSourceFiles()
+  console.log('Source files:', sourceFiles.map(f => f.getFilePath()))
+
   const analysis: DependencyAnalysis = {
-    externalImports: new Set<string>(),
+    externalImports: new Map<string, Set<string>>(),
     internalImports: new Set<string>(),
     internalAliasImports: new Set<string>()
   };
@@ -103,17 +127,18 @@ export async function analyzeDepsGenerator(
   sourceFiles.forEach(sourceFile => {
     const fileDir = path.dirname(sourceFile.getFilePath());
 
+    // Analyze import declarations
     const importDeclarations = sourceFile.getImportDeclarations();
     importDeclarations.forEach(importDecl => {
       const moduleSpecifier = importDecl.getModuleSpecifierValue();
-      analyzeImport(moduleSpecifier, analysis, fileDir, analysisContext);
+      analyzeImport(moduleSpecifier, analysis, fileDir, analysisContext, importDecl);
     });
 
+    // Analyze require calls
     const requireCalls = sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)
       .filter(call => {
         const expression = call.getExpression();
         const symbol = expression.getSymbol();
-
         return symbol?.getName() === 'require' &&
           symbol?.getDeclarations()?.some(d => {
             const filePath = d.getSourceFile().getFilePath();
@@ -142,7 +167,8 @@ export async function analyzeDepsGenerator(
     peerDependencies: originalPackageJson.peerDependencies || {},
   };
 
-  analysis.externalImports.forEach(packageName => {
+  // Add only used dependencies
+  analysis.externalImports.forEach((imports, packageName) => {
     if (originalPackageJson.dependencies?.[packageName]) {
       optimizedPackageJson.dependencies[packageName] =
         originalPackageJson.dependencies[packageName];
@@ -158,7 +184,13 @@ export async function analyzeDepsGenerator(
     internalDependencies: {
       relative: Array.from(analysis.internalImports),
       alias: Array.from(analysis.internalAliasImports)
-    }
+    },
+    usedImports: Object.fromEntries(
+      Array.from(analysis.externalImports.entries()).map(([pkg, imports]) => [
+        pkg,
+        Array.from(imports)
+      ])
+    )
   });
 
   await formatFiles(tree);
@@ -178,33 +210,40 @@ function isInternalAlias(moduleSpecifier: string, context: ImportAnalysisContext
     }
   }
 
-  if (context.internalPatterns.some(pattern => pattern.test(moduleSpecifier))) {
-    return true;
-  }
-
-  const packageName = moduleSpecifier.split('/').slice(0, 2).join('/');
-  return !context.packageJson.dependencies?.[packageName] &&
-    !context.packageJson.devDependencies?.[packageName] &&
-    !context.packageJson.peerDependencies?.[packageName];
+  return context.internalPatterns.some(pattern => pattern.test(moduleSpecifier));
 }
 
 function analyzeImport(
   moduleSpecifier: string,
   analysis: DependencyAnalysis,
   baseDir: string,
-  context: ImportAnalysisContext
+  context: ImportAnalysisContext,
+  importDecl?: any
 ) {
   if (moduleSpecifier.startsWith('.') || moduleSpecifier.startsWith('/')) {
     const absolutePath = path.resolve(baseDir, moduleSpecifier);
     analysis.internalImports.add(absolutePath);
   } else if (isInternalAlias(moduleSpecifier, context)) {
     analysis.internalAliasImports.add(moduleSpecifier);
-  } else {
-    const packageName = moduleSpecifier.startsWith('@')
-      ? moduleSpecifier.split('/').slice(0, 2).join('/')
-      : moduleSpecifier.split('/')[0];
+  } else if (isNodeModule(moduleSpecifier, context)) {
+    const packageName = extractPackageName(moduleSpecifier);
+    if (!analysis.externalImports.has(packageName)) {
+      analysis.externalImports.set(packageName, new Set());
+    }
 
-    analysis.externalImports.add(packageName);
+    // Track imported items
+    if (importDecl) {
+      const namedImports = importDecl.getNamedImports();
+      namedImports.forEach((namedImport: any) => {
+        const name = namedImport.getName();
+        analysis.externalImports.get(packageName)?.add(name);
+      });
+
+      const defaultImport = importDecl.getDefaultImport();
+      if (defaultImport) {
+        analysis.externalImports.get(packageName)?.add('default');
+      }
+    }
   }
 }
 

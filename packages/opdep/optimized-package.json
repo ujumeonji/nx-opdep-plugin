@@ -1,0 +1,11 @@
+{
+  "name": "@otter.moon/nx-opdep",
+  "version": "0.0.2",
+  "dependencies": {},
+  "devDependencies": {},
+  "peerDependencies": {},
+  "internalDependencies": {
+    "relative": [],
+    "alias": []
+  }
+}
