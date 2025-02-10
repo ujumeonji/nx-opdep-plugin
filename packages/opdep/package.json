@@ -4,13 +4,10 @@
   "description": "Nx plugin for analyzing and optimizing dependencies",
   "keywords": [
     "nx",
-    "plugin",
-    "dependencies",
-    "analysis",
+    "nx-plugin",
+    "dependency",
     "optimization"
   ],
-  "author": "ujumeonji",
-  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/ujumeonji/nx-opdep-plugin"
@@ -20,20 +17,15 @@
     "ts-morph": "^21.0.1",
     "tslib": "^2.3.0"
   },
-  "devDependencies": {
-    "ts-morph": "^25.0.1"
-  },
   "type": "commonjs",
-  "main": "./src/index.js",
-  "module": "../../dist/packages/opdep/src/index.js",
-  "typings": "./src/index.d.ts",
+  "main": "../../dist/packages/opdep/src/index.js",
+  "typings": "../../dist/packages/opdep/src/index.d.ts",
   "generators": "./generators.json",
   "executors": "./executors.json",
   "publishConfig": {
     "access": "public"
   },
   "files": [
-    "src",
     "generators.json",
     "executors.json",
     "../../dist/packages/opdep"
