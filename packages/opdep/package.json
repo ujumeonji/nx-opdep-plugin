@@ -23,10 +23,16 @@
     "ts-morph": "^25.0.1"
   },
   "type": "commonjs",
-  "main": "./src/index.js",
-  "typings": "./src/index.d.ts",
+  "main": "../../dist/packages/opdep/src/index.js",
+  "module": "../../dist/packages/opdep/src/index.js",
+  "typings": "../../dist/packages/opdep/src/index.d.ts",
   "generators": "./generators.json",
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "files": [
+    "src",
+    "generators.json",
+    "../../dist/packages/opdep"
+  ]
 }
