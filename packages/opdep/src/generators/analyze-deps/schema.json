@@ -17,6 +17,22 @@
       "type": "string",
       "description": "The path where the optimized package.json should be generated",
       "default": "optimized-package.json"
+    },
+    "internalModulePatterns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Patterns to identify internal modules (supports glob patterns)",
+      "default": []
+    },
+    "aliasPatterns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Custom patterns to identify module aliases (supports glob patterns)",
+      "default": []
     }
   },
   "required": ["projectName"]

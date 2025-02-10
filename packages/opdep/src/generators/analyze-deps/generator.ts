@@ -1,8 +1,8 @@
 import { Tree, formatFiles, getProjects } from '@nx/devkit';
 import { AnalyzeDepsGeneratorSchema } from './schema';
-import { Project, SyntaxKind, ts } from 'ts-morph';
+import { Project, SyntaxKind, ts, Node } from 'ts-morph';
 import * as path from 'path';
-import * as fs from 'fs';
+import escapeStringRegexp from 'escape-string-regexp';
 
 interface PackageJson {
   name: string;
@@ -26,6 +26,26 @@ interface ImportAnalysisContext {
   paths: TsConfigPaths;
   internalPatterns: RegExp[];
   packageJson: PackageJson;
+  aliasPatterns?: string[];
+}
+
+function readJsonFromTree(tree: Tree, filePath: string): any {
+  const content = tree.read(filePath, 'utf-8');
+  if (!content) {
+    throw new Error(`File not found: ${filePath}`);
+  }
+  return JSON.parse(content);
+}
+
+function writeJsonToTree(tree: Tree, filePath: string, content: any): void {
+  tree.write(filePath, JSON.stringify(content, null, 2));
+}
+
+function createRegexPattern(pattern: string): RegExp {
+  const escaped = escapeStringRegexp(pattern)
+    .replace(/\\\*/g, '.*')
+    .replace(/\\\?/g, '.');
+  return new RegExp(`^${escaped}$`);
 }
 
 export async function analyzeDepsGenerator(
@@ -40,35 +60,35 @@ export async function analyzeDepsGenerator(
   }
 
   const tsConfigPath = path.join(project.root, 'tsconfig.json');
-  const tsConfig = JSON.parse(fs.readFileSync(tsConfigPath, 'utf-8'));
-  const baseConfigPath = path.resolve(project.root, tsConfig.extends || '');
-  const baseConfig = fs.existsSync(baseConfigPath) 
-    ? JSON.parse(fs.readFileSync(baseConfigPath, 'utf-8'))
-    : { compilerOptions: { paths: {} } };
-
-  const paths: TsConfigPaths = {
-    ...(baseConfig.compilerOptions?.paths || {}),
+  const tsConfig = readJsonFromTree(tree, tsConfigPath);
+  
+  let paths: TsConfigPaths = {};
+  
+  if (tsConfig.extends) {
+    const baseConfigPath = path.resolve(project.root, tsConfig.extends);
+    try {
+      const baseConfig = readJsonFromTree(tree, baseConfigPath);
+      paths = { ...baseConfig.compilerOptions?.paths };
+    } catch (error) {
+      console.warn(`Warning: Could not read extended tsconfig at ${baseConfigPath}`);
+    }
+  }
+  
+  paths = {
+    ...paths,
     ...(tsConfig.compilerOptions?.paths || {})
   };
 
   const packageJsonPath = path.join(project.root, 'package.json');
-  const originalPackageJson: PackageJson = JSON.parse(
-    fs.readFileSync(packageJsonPath, 'utf-8')
-  );
+  const originalPackageJson: PackageJson = readJsonFromTree(tree, packageJsonPath);
 
-  const internalPatterns = (options.internalModulePatterns || []).map(pattern => {
-    const regexPattern = pattern
-      .replace(/\*/g, '.*')
-      .replace(/\/$/, '')
-      .replace(/^/, '^')
-      .replace(/$/, '$');
-    return new RegExp(regexPattern);
-  });
+  const internalPatterns = (options.internalModulePatterns || []).map(createRegexPattern);
 
   const analysisContext: ImportAnalysisContext = {
     paths,
     internalPatterns,
-    packageJson: originalPackageJson
+    packageJson: originalPackageJson,
+    aliasPatterns: options.aliasPatterns
   };
 
   const tsProject = new Project({
@@ -83,24 +103,35 @@ export async function analyzeDepsGenerator(
   };
 
   sourceFiles.forEach(sourceFile => {
-    const importDeclarations = sourceFile.getImportDeclarations();
+    const fileDir = path.dirname(sourceFile.getFilePath());
     
+    const importDeclarations = sourceFile.getImportDeclarations();
     importDeclarations.forEach(importDecl => {
       const moduleSpecifier = importDecl.getModuleSpecifierValue();
-      analyzeImport(moduleSpecifier, analysis, project.root, analysisContext);
+      analyzeImport(moduleSpecifier, analysis, fileDir, analysisContext);
     });
 
     const requireCalls = sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)
       .filter(call => {
         const expression = call.getExpression();
-        return expression.getText() === 'require';
+        const symbol = expression.getSymbol();
+        
+        return symbol?.getName() === 'require' &&
+               symbol?.getDeclarations()?.some(d => {
+                 const filePath = d.getSourceFile().getFilePath();
+                 return filePath.includes('node_modules/typescript') ||
+                        filePath.includes('@types/node');
+               });
       });
 
     requireCalls.forEach(call => {
       const args = call.getArguments();
       if (args.length > 0) {
-        const moduleSpecifier = args[0].getText().replace(/['"]/g, '');
-        analyzeImport(moduleSpecifier, analysis, project.root, analysisContext);
+        const arg = args[0];
+        if (Node.isStringLiteral(arg)) {
+          const moduleSpecifier = arg.getLiteralValue();
+          analyzeImport(moduleSpecifier, analysis, fileDir, analysisContext);
+        }
       }
     });
   });
@@ -124,31 +155,27 @@ export async function analyzeDepsGenerator(
   });
 
   const outputPath = path.join(project.root, options.outputPath);
-  fs.writeFileSync(
-    outputPath,
-    JSON.stringify({
-      ...optimizedPackageJson,
-      internalDependencies: {
-        relative: Array.from(analysis.internalImports),
-        alias: Array.from(analysis.internalAliasImports)
-      }
-    }, null, 2)
-  );
+  writeJsonToTree(tree, outputPath, {
+    ...optimizedPackageJson,
+    internalDependencies: {
+      relative: Array.from(analysis.internalImports),
+      alias: Array.from(analysis.internalAliasImports)
+    }
+  });
 
   await formatFiles(tree);
 }
 
 function isInternalAlias(moduleSpecifier: string, context: ImportAnalysisContext): boolean {
-  if (!moduleSpecifier.startsWith('@')) return false;
+  if (context.aliasPatterns?.some(pattern => 
+    createRegexPattern(pattern).test(moduleSpecifier)
+  )) {
+    return true;
+  }
 
   for (const [alias, targets] of Object.entries(context.paths)) {
-    const pattern = alias
-      .replace(/\*/g, '.*')
-      .replace(/\/$/, '')
-      .replace(/^/, '^')
-      .replace(/$/, '$');
-
-    if (new RegExp(pattern).test(moduleSpecifier)) {
+    const pattern = createRegexPattern(alias);
+    if (pattern.test(moduleSpecifier)) {
       return true;
     }
   }
@@ -166,11 +193,11 @@ function isInternalAlias(moduleSpecifier: string, context: ImportAnalysisContext
 function analyzeImport(
   moduleSpecifier: string, 
   analysis: DependencyAnalysis, 
-  projectRoot: string,
+  baseDir: string,
   context: ImportAnalysisContext
 ) {
   if (moduleSpecifier.startsWith('.') || moduleSpecifier.startsWith('/')) {
-    const absolutePath = path.resolve(projectRoot, moduleSpecifier);
+    const absolutePath = path.resolve(baseDir, moduleSpecifier);
     analysis.internalImports.add(absolutePath);
   } else if (isInternalAlias(moduleSpecifier, context)) {
     analysis.internalAliasImports.add(moduleSpecifier);
