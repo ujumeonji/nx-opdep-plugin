@@ -2,7 +2,6 @@ import { Tree, formatFiles, getProjects } from '@nx/devkit';
 import { AnalyzeDepsGeneratorSchema } from './schema';
 import { Project, SyntaxKind, ts, Node } from 'ts-morph';
 import * as path from 'path';
-import escapeStringRegexp from 'escape-string-regexp';
 
 interface PackageJson {
   name: string;
@@ -42,10 +41,9 @@ function writeJsonToTree(tree: Tree, filePath: string, content: any): void {
 }
 
 function createRegexPattern(pattern: string): RegExp {
-  const escaped = escapeStringRegexp(pattern)
-    .replace(/\\\*/g, '.*')
-    .replace(/\\\?/g, '.');
-  return new RegExp(`^${escaped}$`);
+  // Escape special regex characters
+  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(escaped);
 }
 
 export async function analyzeDepsGenerator(
@@ -54,16 +52,16 @@ export async function analyzeDepsGenerator(
 ) {
   const projects = getProjects(tree);
   const project = projects.get(options.projectName);
-  
+
   if (!project) {
     throw new Error(`Project ${options.projectName} not found`);
   }
 
   const tsConfigPath = path.join(project.root, 'tsconfig.json');
   const tsConfig = readJsonFromTree(tree, tsConfigPath);
-  
+
   let paths: TsConfigPaths = {};
-  
+
   if (tsConfig.extends) {
     const baseConfigPath = path.resolve(project.root, tsConfig.extends);
     try {
@@ -73,7 +71,7 @@ export async function analyzeDepsGenerator(
       console.warn(`Warning: Could not read extended tsconfig at ${baseConfigPath}`);
     }
   }
-  
+
   paths = {
     ...paths,
     ...(tsConfig.compilerOptions?.paths || {})
@@ -104,7 +102,7 @@ export async function analyzeDepsGenerator(
 
   sourceFiles.forEach(sourceFile => {
     const fileDir = path.dirname(sourceFile.getFilePath());
-    
+
     const importDeclarations = sourceFile.getImportDeclarations();
     importDeclarations.forEach(importDecl => {
       const moduleSpecifier = importDecl.getModuleSpecifierValue();
@@ -115,13 +113,13 @@ export async function analyzeDepsGenerator(
       .filter(call => {
         const expression = call.getExpression();
         const symbol = expression.getSymbol();
-        
+
         return symbol?.getName() === 'require' &&
-               symbol?.getDeclarations()?.some(d => {
-                 const filePath = d.getSourceFile().getFilePath();
-                 return filePath.includes('node_modules/typescript') ||
-                        filePath.includes('@types/node');
-               });
+          symbol?.getDeclarations()?.some(d => {
+            const filePath = d.getSourceFile().getFilePath();
+            return filePath.includes('node_modules/typescript') ||
+              filePath.includes('@types/node');
+          });
       });
 
     requireCalls.forEach(call => {
@@ -167,7 +165,7 @@ export async function analyzeDepsGenerator(
 }
 
 function isInternalAlias(moduleSpecifier: string, context: ImportAnalysisContext): boolean {
-  if (context.aliasPatterns?.some(pattern => 
+  if (context.aliasPatterns?.some(pattern =>
     createRegexPattern(pattern).test(moduleSpecifier)
   )) {
     return true;
@@ -186,13 +184,13 @@ function isInternalAlias(moduleSpecifier: string, context: ImportAnalysisContext
 
   const packageName = moduleSpecifier.split('/').slice(0, 2).join('/');
   return !context.packageJson.dependencies?.[packageName] &&
-         !context.packageJson.devDependencies?.[packageName] &&
-         !context.packageJson.peerDependencies?.[packageName];
+    !context.packageJson.devDependencies?.[packageName] &&
+    !context.packageJson.peerDependencies?.[packageName];
 }
 
 function analyzeImport(
-  moduleSpecifier: string, 
-  analysis: DependencyAnalysis, 
+  moduleSpecifier: string,
+  analysis: DependencyAnalysis,
   baseDir: string,
   context: ImportAnalysisContext
 ) {
@@ -202,10 +200,10 @@ function analyzeImport(
   } else if (isInternalAlias(moduleSpecifier, context)) {
     analysis.internalAliasImports.add(moduleSpecifier);
   } else {
-    const packageName = moduleSpecifier.startsWith('@') 
+    const packageName = moduleSpecifier.startsWith('@')
       ? moduleSpecifier.split('/').slice(0, 2).join('/')
       : moduleSpecifier.split('/')[0];
-    
+
     analysis.externalImports.add(packageName);
   }
 }
