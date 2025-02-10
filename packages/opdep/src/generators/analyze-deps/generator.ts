@@ -56,9 +56,7 @@ export async function analyzeDepsGenerator(
     fs.readFileSync(packageJsonPath, 'utf-8')
   );
 
-  // 내부 모듈 패턴을 정규식으로 변환
   const internalPatterns = (options.internalModulePatterns || []).map(pattern => {
-    // 문자열 패턴을 정규식으로 변환 (e.g., "@org/*" -> "^@org/.*$")
     const regexPattern = pattern
       .replace(/\*/g, '.*')
       .replace(/\/$/, '')
@@ -142,8 +140,7 @@ export async function analyzeDepsGenerator(
 
 function isInternalAlias(moduleSpecifier: string, context: ImportAnalysisContext): boolean {
   if (!moduleSpecifier.startsWith('@')) return false;
-  
-  // tsconfig paths에 정의된 alias인지 확인
+
   for (const [alias, targets] of Object.entries(context.paths)) {
     const pattern = alias
       .replace(/\*/g, '.*')
@@ -156,12 +153,10 @@ function isInternalAlias(moduleSpecifier: string, context: ImportAnalysisContext
     }
   }
 
-  // 사용자 정의 내부 모듈 패턴 확인
   if (context.internalPatterns.some(pattern => pattern.test(moduleSpecifier))) {
     return true;
   }
 
-  // package.json의 dependencies에 없는 @로 시작하는 import는 내부 모듈로 간주
   const packageName = moduleSpecifier.split('/').slice(0, 2).join('/');
   return !context.packageJson.dependencies?.[packageName] &&
          !context.packageJson.devDependencies?.[packageName] &&
