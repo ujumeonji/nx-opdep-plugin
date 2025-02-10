@@ -7,8 +7,8 @@ import * as fs from 'fs';
 interface PackageJson {
   name: string;
   version: string;
-  dependencies?: { [key: string]: string };
-  devDependencies?: { [key: string]: string };
+  dependencies: { [key: string]: string };
+  devDependencies: { [key: string]: string };
   peerDependencies?: { [key: string]: string };
 }
 
@@ -16,7 +16,6 @@ export async function analyzeDepsGenerator(
   tree: Tree,
   options: AnalyzeDepsGeneratorSchema
 ) {
-  // Get the project configuration
   const projects = getProjects(tree);
   const project = projects.get(options.projectName);
   
@@ -24,28 +23,20 @@ export async function analyzeDepsGenerator(
     throw new Error(`Project ${options.projectName} not found`);
   }
 
-  // Initialize ts-morph project
   const tsProject = new Project({
     tsConfigFilePath: path.join(project.root, 'tsconfig.json'),
   });
 
-  // Get all source files
   const sourceFiles = tsProject.getSourceFiles();
-  
-  // Track all imports
   const imports = new Set<string>();
 
-  // Analyze each source file
   sourceFiles.forEach(sourceFile => {
-    // Get all import declarations
     const importDeclarations = sourceFile.getImportDeclarations();
     
     importDeclarations.forEach(importDecl => {
       const moduleSpecifier = importDecl.getModuleSpecifierValue();
       
-      // Only consider external packages (not relative imports)
       if (!moduleSpecifier.startsWith('.') && !moduleSpecifier.startsWith('/')) {
-        // Handle scoped packages and submodules
         const packageName = moduleSpecifier.startsWith('@') 
           ? moduleSpecifier.split('/').slice(0, 2).join('/')
           : moduleSpecifier.split('/')[0];
@@ -54,7 +45,6 @@ export async function analyzeDepsGenerator(
       }
     });
 
-    // Also check for require statements
     const requireCalls = sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)
       .filter(call => {
         const expression = call.getExpression();
@@ -76,13 +66,11 @@ export async function analyzeDepsGenerator(
     });
   });
 
-  // Read the original package.json
   const packageJsonPath = path.join(project.root, 'package.json');
   const originalPackageJson: PackageJson = JSON.parse(
     fs.readFileSync(packageJsonPath, 'utf-8')
   );
 
-  // Create optimized package.json
   const optimizedPackageJson: PackageJson = {
     name: originalPackageJson.name,
     version: originalPackageJson.version,
@@ -91,7 +79,6 @@ export async function analyzeDepsGenerator(
     peerDependencies: originalPackageJson.peerDependencies || {},
   };
 
-  // Add only the dependencies that are actually used
   imports.forEach(packageName => {
     if (originalPackageJson.dependencies?.[packageName]) {
       optimizedPackageJson.dependencies[packageName] =
@@ -102,9 +89,8 @@ export async function analyzeDepsGenerator(
     }
   });
 
-  // Write the optimized package.json
   const outputPath = path.join(project.root, options.outputPath);
-  tree.write(
+  fs.writeFileSync(
     outputPath,
     JSON.stringify(optimizedPackageJson, null, 2)
   );
