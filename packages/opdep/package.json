@@ -18,16 +18,16 @@
     "tslib": "^2.3.0"
   },
   "type": "commonjs",
-  "main": "../../dist/packages/opdep/src/index.js",
-  "typings": "../../dist/packages/opdep/src/index.d.ts",
+  "main": "./dist/src/index.js",
+  "typings": "./dist/src/index.d.ts",
   "generators": "./generators.json",
   "executors": "./executors.json",
   "publishConfig": {
     "access": "public"
   },
   "files": [
+    "dist",
     "generators.json",
-    "executors.json",
-    "../../dist/packages/opdep"
+    "executors.json"
   ]
 }
