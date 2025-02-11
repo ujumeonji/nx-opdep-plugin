@@ -351,4 +351,83 @@ describe('analyze-deps generator', () => {
       analyzeDepsGenerator(tree, { projectName: 'test-project' })
     ).resolves.not.toThrow()
   })
+
+  it('should analyze re-exports and export * statements', async () => {
+    tree.write(
+      'package.json',
+      JSON.stringify({
+        dependencies: {
+          '@nestjs/core': '^8.0.0',
+          '@nestjs/common': '^8.0.0'
+        }
+      })
+    )
+
+    tree.write(
+      'tsconfig.json',
+      JSON.stringify({
+        compilerOptions: {
+          paths: {
+            '@app/*': ['src/*']
+          }
+        }
+      })
+    )
+
+    tree.write(
+      'project.json',
+      JSON.stringify({
+        name: 'test-project',
+        root: '.'
+      })
+    )
+
+    // Main file that imports from barrel file
+    tree.write(
+      'src/main.ts',
+      `
+        import { Something } from './barrel'
+      `
+    )
+
+    // Barrel file with re-exports
+    tree.write(
+      'src/barrel.ts',
+      `
+        export * from './features'
+        export { default as Something } from './other'
+      `
+    )
+
+    // Feature file with external dependency
+    tree.write(
+      'src/features.ts',
+      `
+        import { Injectable } from '@nestjs/common'
+        
+        @Injectable()
+        export class Feature {}
+      `
+    )
+
+    // Other file with different external dependency
+    tree.write(
+      'src/other.ts',
+      `
+        import { NestFactory } from '@nestjs/core'
+        
+        export default class Something {}
+      `
+    )
+
+    await analyzeDepsGenerator(tree, { projectName: 'test-project' })
+
+    const output = JSON.parse(tree.read('opdep.json', 'utf-8'))
+
+    // Should detect dependencies from both re-exported files
+    expect(output.dependencies).toHaveProperty('@nestjs/common')
+    expect(output.dependencies).toHaveProperty('@nestjs/core')
+    expect(output.analysis.internalImports).toContain('./features')
+    expect(output.analysis.internalImports).toContain('./other')
+  })
 });

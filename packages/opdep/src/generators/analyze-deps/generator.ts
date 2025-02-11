@@ -94,6 +94,40 @@ function analyzeImport(
           const subModuleSpecifier = subImport.getModuleSpecifierValue();
           analyzeImport(subModuleSpecifier, analysis, newBaseDir, context, subImport, analyzedPaths, depth + 1);
         }
+
+        const exports = sourceFile.getExportDeclarations();
+        for (const exportDecl of exports) {
+          const exportModuleSpecifier = exportDecl.getModuleSpecifierValue();
+          if (exportModuleSpecifier) {
+            analyzeImport(
+              exportModuleSpecifier,
+              analysis,
+              newBaseDir,
+              context,
+              exportDecl as any,
+              analyzedPaths,
+              depth + 1
+            );
+          }
+        }
+
+        const exportStars = sourceFile.getExportDeclarations().filter(exp =>
+          exp.isNamespaceExport() && exp.getModuleSpecifierValue()
+        );
+        for (const exportStar of exportStars) {
+          const starModuleSpecifier = exportStar.getModuleSpecifierValue();
+          if (starModuleSpecifier) {
+            analyzeImport(
+              starModuleSpecifier,
+              analysis,
+              newBaseDir,
+              context,
+              exportStar as any,
+              analyzedPaths,
+              depth + 1
+            );
+          }
+        }
       }
     }
   } else if (moduleSpecifier.startsWith('@')) {
