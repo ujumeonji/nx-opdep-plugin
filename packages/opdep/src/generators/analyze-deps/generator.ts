@@ -67,7 +67,7 @@ function getWorkspaceLibraries(tree: Tree): Map<string, WorkspaceLibrary> {
   const projects = getProjects(tree);
 
   for (const [name, config] of projects.entries()) {
-    if (config.root.startsWith('libs/')) {
+    if (config.projectType === 'library') {
       libraries.set(name, {
         name,
         root: config.root
@@ -86,6 +86,7 @@ function analyzeImport(
     packageJson: any;
     tsConfig: any;
     workspaceLibs: Map<string, WorkspaceLibrary>;
+    tree: Tree;
   },
   importDecl?: ImportDeclaration,
   analyzedPaths: Set<string> = new Set(),
@@ -192,18 +193,79 @@ function analyzeImport(
         }
       }
     } else {
-      const isWorkspaceLib = Array.from(context.workspaceLibs.values()).some(lib =>
+      const workspaceLib = Array.from(context.workspaceLibs.values()).find(lib =>
         moduleSpecifier.startsWith(`@${lib.name}/`) || moduleSpecifier === `@${lib.name}`
       );
 
-      if (isWorkspaceLib) {
+      if (workspaceLib) {
         analysis.internalImports.add(moduleSpecifier);
-      } else {
-        const imports = importDecl ? importDecl.getNamedImports().map(named => named.getName()) : [];
-        if (!analysis.externalImports.has(moduleSpecifier)) {
-          analysis.externalImports.set(moduleSpecifier, new Set());
+
+        try {
+          const libTsConfigPath = path.join(workspaceLib.root, 'tsconfig.json');
+          const libTsConfig = readJsonFromTree(context.tree, libTsConfigPath);
+          const libProject = new Project({
+            tsConfigFilePath: libTsConfigPath,
+            skipAddingFilesFromTsConfig: true
+          });
+
+          const libSourceFiles = libProject.addSourceFilesAtPaths([
+            path.join(workspaceLib.root, '**/*.ts'),
+            path.join(workspaceLib.root, '**/*.tsx'),
+            `!${path.join(workspaceLib.root, 'node_modules/**/*')}`,
+            `!${path.join(workspaceLib.root, '**/*.spec.ts')}`,
+            `!${path.join(workspaceLib.root, '**/*.test.ts')}`,
+          ]);
+
+          for (const sourceFile of libSourceFiles) {
+            const libBaseDir = path.dirname(sourceFile.getFilePath());
+
+            const imports = sourceFile.getImportDeclarations();
+            for (const importDecl of imports) {
+              const subModuleSpecifier = importDecl.getModuleSpecifierValue();
+              analyzeImport(
+                subModuleSpecifier,
+                analysis,
+                libBaseDir,
+                context,
+                importDecl,
+                analyzedPaths,
+                depth + 1
+              );
+            }
+
+            const exports = sourceFile.getExportDeclarations();
+            for (const exportDecl of exports) {
+              const exportModuleSpecifier = exportDecl.getModuleSpecifierValue();
+              if (exportModuleSpecifier) {
+                analyzeImport(
+                  exportModuleSpecifier,
+                  analysis,
+                  libBaseDir,
+                  context,
+                  exportDecl as any,
+                  analyzedPaths,
+                  depth + 1
+                );
+              }
+            }
+          }
+        } catch (error) {
+          logger.warn(`Failed to analyze workspace library ${workspaceLib.name}: ${error}`);
         }
-        imports.forEach(imp => analysis.externalImports.get(moduleSpecifier)?.add(imp));
+      } else {
+        const isWorkspaceLib = Array.from(context.workspaceLibs.values()).some(lib =>
+          moduleSpecifier.startsWith(`@${lib.name}/`) || moduleSpecifier === `@${lib.name}`
+        );
+
+        if (isWorkspaceLib) {
+          analysis.internalImports.add(moduleSpecifier);
+        } else {
+          const imports = importDecl ? importDecl.getNamedImports().map(named => named.getName()) : [];
+          if (!analysis.externalImports.has(moduleSpecifier)) {
+            analysis.externalImports.set(moduleSpecifier, new Set());
+          }
+          imports.forEach(imp => analysis.externalImports.get(moduleSpecifier)?.add(imp));
+        }
       }
     }
   } else {
@@ -261,7 +323,7 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
         moduleSpecifier,
         analysis,
         baseDir,
-        { packageJson, tsConfig, workspaceLibs },
+        { packageJson, tsConfig, workspaceLibs, tree },
         importDecl
       );
     }
@@ -270,7 +332,13 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
     for (const exportDecl of exports) {
       const moduleSpecifier = exportDecl.getModuleSpecifierValue();
       if (moduleSpecifier) {
-        analyzeImport(moduleSpecifier, analysis, baseDir, { packageJson, tsConfig, workspaceLibs }, exportDecl as any);
+        analyzeImport(
+          moduleSpecifier,
+          analysis,
+          baseDir,
+          { packageJson, tsConfig, workspaceLibs, tree },
+          exportDecl as any
+        );
       }
     }
   }
