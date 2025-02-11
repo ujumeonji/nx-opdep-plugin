@@ -12,7 +12,7 @@ interface PackageJson {
 }
 
 interface DependencyAnalysis {
-  externalImports: Map<string, Set<string>>; // package -> imported items
+  externalImports: Map<string, Set<string>>;
   internalImports: Set<string>;
   internalAliasImports: Set<string>;
 }
@@ -46,11 +46,9 @@ function createRegexPattern(pattern: string): RegExp {
 }
 
 function extractPackageName(moduleSpecifier: string): string {
-  // Handle scoped packages
   if (moduleSpecifier.startsWith('@')) {
     return moduleSpecifier.split('/').slice(0, 2).join('/');
   }
-  // Handle regular packages
   return moduleSpecifier.split('/')[0];
 }
 
@@ -64,19 +62,62 @@ function isNodeModule(moduleSpecifier: string, context: ImportAnalysisContext): 
 }
 
 function findPackageJson(tree: Tree, startPath: string): PackageJson | null {
-  // 먼저 프로젝트 디렉토리에서 package.json을 찾습니다
   const projectPackageJsonPath = path.join(startPath, 'package.json');
   if (tree.exists(projectPackageJsonPath)) {
     return readJsonFromTree(tree, projectPackageJsonPath);
   }
 
-  // 프로젝트 디렉토리에 없다면 루트 디렉토리의 package.json을 찾습니다
   const rootPackageJsonPath = '/package.json';
   if (tree.exists(rootPackageJsonPath)) {
     return readJsonFromTree(tree, rootPackageJsonPath);
   }
 
   return null;
+}
+
+function analyzeProjectDependencies(
+  tree: Tree,
+  projectRoot: string,
+  analyzedProjects: Set<string> = new Set()
+): PackageJson {
+  const packageJson = findPackageJson(tree, projectRoot);
+  if (!packageJson) {
+    throw new Error(`No package.json found for project at ${projectRoot}`);
+  }
+
+  if (analyzedProjects.has(projectRoot)) {
+    return packageJson;
+  }
+  analyzedProjects.add(projectRoot);
+
+  const allDependencies = {
+    ...packageJson.dependencies,
+    ...packageJson.devDependencies,
+    ...packageJson.peerDependencies,
+  };
+
+  const projects = getProjects(tree);
+  for (const [, project] of projects) {
+    if (project.root !== projectRoot && allDependencies[project.name]) {
+      const subPackageJson = analyzeProjectDependencies(tree, project.root, analyzedProjects);
+      packageJson.dependencies = {
+        ...packageJson.dependencies,
+        ...subPackageJson.dependencies,
+      };
+      packageJson.devDependencies = {
+        ...packageJson.devDependencies,
+        ...subPackageJson.devDependencies,
+      };
+      if (subPackageJson.peerDependencies) {
+        packageJson.peerDependencies = {
+          ...packageJson.peerDependencies,
+          ...subPackageJson.peerDependencies,
+        };
+      }
+    }
+  }
+
+  return packageJson;
 }
 
 export async function analyzeDepsGenerator(
@@ -91,146 +132,64 @@ export async function analyzeDepsGenerator(
   }
 
   const projectRoot = project.root;
-  const packageJson = findPackageJson(tree, projectRoot);
-
-  if (!packageJson) {
-    throw new Error('No package.json found in project or root directory');
-  }
+  const packageJson = analyzeProjectDependencies(tree, projectRoot);
 
   const tsConfigPath = path.join(project.root, 'tsconfig.json');
   const tsConfig = readJsonFromTree(tree, tsConfigPath);
 
-  let paths: TsConfigPaths = {};
+  const tsProject = new Project({
+    tsConfigFilePath: tsConfigPath,
+  });
 
-  if (tsConfig.extends) {
-    const baseConfigPath = path.resolve(project.root, tsConfig.extends);
-    try {
-      const baseConfig = readJsonFromTree(tree, baseConfigPath);
-      paths = { ...baseConfig.compilerOptions?.paths };
-    } catch (error) {
-      console.warn(`Warning: Could not read extended tsconfig at ${baseConfigPath}`);
+  const sourceFiles = tsProject.getSourceFiles();
+  const analysis: DependencyAnalysis = {
+    externalImports: new Map(),
+    internalImports: new Set(),
+    internalAliasImports: new Set(),
+  };
+
+  const context: ImportAnalysisContext = {
+    paths: tsConfig.compilerOptions?.paths || {},
+    internalPatterns: [createRegexPattern(project.root)],
+    packageJson,
+  };
+
+  for (const sourceFile of sourceFiles) {
+    const imports = sourceFile.getImportDeclarations();
+    for (const importDecl of imports) {
+      const moduleSpecifier = importDecl.getModuleSpecifierValue();
+      analyzeImport(moduleSpecifier, analysis, project.root, context, importDecl);
     }
   }
 
-  paths = {
-    ...paths,
-    ...(tsConfig.compilerOptions?.paths || {})
-  };
-
-  const internalPatterns = (options.internalModulePatterns || []).map(createRegexPattern);
-
-  const analysisContext: ImportAnalysisContext = {
-    paths,
-    internalPatterns,
-    packageJson,
-    aliasPatterns: options.aliasPatterns
-  };
-
-  const tsProject = new Project({
-    tsConfigFilePath: tsConfigPath,
-    skipAddingFilesFromTsConfig: true
-  })
-
-  const srcDir = path.join(project.root, 'src')
-  console.log('Source directory:', srcDir)
-  tsProject.addSourceFilesAtPaths(path.join(srcDir, '**/*.{ts,tsx}'))
-
-  const sourceFiles = tsProject.getSourceFiles()
-  console.log('Source files:', sourceFiles.map(f => f.getFilePath()))
-
-  const analysis: DependencyAnalysis = {
-    externalImports: new Map<string, Set<string>>(),
-    internalImports: new Set<string>(),
-    internalAliasImports: new Set<string>()
-  };
-
-  sourceFiles.forEach(sourceFile => {
-    const fileDir = path.dirname(sourceFile.getFilePath());
-
-    // Analyze import declarations
-    const importDeclarations = sourceFile.getImportDeclarations();
-    importDeclarations.forEach(importDecl => {
-      const moduleSpecifier = importDecl.getModuleSpecifierValue();
-      analyzeImport(moduleSpecifier, analysis, fileDir, analysisContext, importDecl);
-    });
-
-    // Analyze require calls
-    const requireCalls = sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)
-      .filter(call => {
-        const expression = call.getExpression();
-        const symbol = expression.getSymbol();
-        return symbol?.getName() === 'require' &&
-          symbol?.getDeclarations()?.some(d => {
-            const filePath = d.getSourceFile().getFilePath();
-            return filePath.includes('node_modules/typescript') ||
-              filePath.includes('@types/node');
-          });
-      });
-
-    requireCalls.forEach(call => {
-      const args = call.getArguments();
-      if (args.length > 0) {
-        const arg = args[0];
-        if (Node.isStringLiteral(arg)) {
-          const moduleSpecifier = arg.getLiteralValue();
-          analyzeImport(moduleSpecifier, analysis, fileDir, analysisContext);
-        }
-      }
-    });
-  });
-
-  const optimizedPackageJson: PackageJson = {
-    name: packageJson.name,
-    version: packageJson.version,
-    dependencies: {},
-    devDependencies: {},
-    peerDependencies: packageJson.peerDependencies || {},
-  };
-
-  // Add only used dependencies
-  analysis.externalImports.forEach((imports, packageName) => {
-    if (packageJson.dependencies?.[packageName]) {
-      optimizedPackageJson.dependencies[packageName] =
-        packageJson.dependencies[packageName];
-    } else if (packageJson.devDependencies?.[packageName]) {
-      optimizedPackageJson.devDependencies[packageName] =
-        packageJson.devDependencies[packageName];
-    }
-  });
-
-  const outputPath = path.join(project.root, options.outputPath);
-  writeJsonToTree(tree, outputPath, {
-    ...optimizedPackageJson,
-    internalDependencies: {
-      relative: Array.from(analysis.internalImports),
-      alias: Array.from(analysis.internalAliasImports)
-    },
-    usedImports: Object.fromEntries(
-      Array.from(analysis.externalImports.entries()).map(([pkg, imports]) => [
-        pkg,
-        Array.from(imports)
+  const outputPath = path.join(project.root, 'opdep.json');
+  const output = {
+    externalImports: Object.fromEntries(
+      Array.from(analysis.externalImports.entries()).map(([key, value]) => [
+        key,
+        Array.from(value),
       ])
-    )
-  });
+    ),
+    internalImports: Array.from(analysis.internalImports),
+    internalAliasImports: Array.from(analysis.internalAliasImports),
+  };
+
+  writeJsonToTree(tree, outputPath, output);
 
   await formatFiles(tree);
 }
 
 function isInternalAlias(moduleSpecifier: string, context: ImportAnalysisContext): boolean {
-  if (context.aliasPatterns?.some(pattern =>
-    createRegexPattern(pattern).test(moduleSpecifier)
-  )) {
-    return true;
-  }
+  if (!context.paths) return false;
 
-  for (const [alias, targets] of Object.entries(context.paths)) {
-    const pattern = createRegexPattern(alias);
-    if (pattern.test(moduleSpecifier)) {
+  for (const [alias, paths] of Object.entries(context.paths)) {
+    const pattern = alias.replace(/\*/, '(.*)');
+    const regex = new RegExp(`^${pattern}$`);
+    if (regex.test(moduleSpecifier)) {
       return true;
     }
   }
-
-  return context.internalPatterns.some(pattern => pattern.test(moduleSpecifier));
+  return false;
 }
 
 function analyzeImport(
@@ -240,30 +199,22 @@ function analyzeImport(
   context: ImportAnalysisContext,
   importDecl?: any
 ) {
-  if (moduleSpecifier.startsWith('.') || moduleSpecifier.startsWith('/')) {
-    const absolutePath = path.resolve(baseDir, moduleSpecifier);
-    analysis.internalImports.add(absolutePath);
-  } else if (isInternalAlias(moduleSpecifier, context)) {
-    analysis.internalAliasImports.add(moduleSpecifier);
-  } else if (isNodeModule(moduleSpecifier, context)) {
+  if (isNodeModule(moduleSpecifier, context)) {
     const packageName = extractPackageName(moduleSpecifier);
     if (!analysis.externalImports.has(packageName)) {
       analysis.externalImports.set(packageName, new Set());
     }
-
-    // Track imported items
-    if (importDecl) {
-      const namedImports = importDecl.getNamedImports();
+    const imports = analysis.externalImports.get(packageName)!;
+    const namedImports = importDecl?.getNamedImports();
+    if (namedImports?.length > 0) {
       namedImports.forEach((namedImport: any) => {
-        const name = namedImport.getName();
-        analysis.externalImports.get(packageName)?.add(name);
+        imports.add(namedImport.getName());
       });
-
-      const defaultImport = importDecl.getDefaultImport();
-      if (defaultImport) {
-        analysis.externalImports.get(packageName)?.add('default');
-      }
     }
+  } else if (isInternalAlias(moduleSpecifier, context)) {
+    analysis.internalAliasImports.add(moduleSpecifier);
+  } else {
+    analysis.internalImports.add(moduleSpecifier);
   }
 }
 
