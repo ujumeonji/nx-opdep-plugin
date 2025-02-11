@@ -196,10 +196,21 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
     tsConfigFilePath: tsConfigPath,
     skipAddingFilesFromTsConfig: true
   });
-  const srcDir = path.join(project.root, 'src');
-  const projectSourceFiles = tsProject.addSourceFilesAtPaths(path.join(srcDir, '**/*.{ts,tsx}'));
+
+  const projectSourceFiles = tsProject.addSourceFilesAtPaths([
+    path.join(project.root, '**/*.ts'),
+    path.join(project.root, '**/*.tsx'),
+    `!${path.join(project.root, 'node_modules/**/*')}`,
+    `!${path.join(project.root, 'dist/**/*')}`,
+    `!${path.join(project.root, 'build/**/*')}`,
+    `!${path.join(project.root, '**/*.spec.ts')}`,
+    `!${path.join(project.root, '**/*.test.ts')}`,
+    `!${path.join(project.root, '**/*.spec.tsx')}`,
+    `!${path.join(project.root, '**/*.test.tsx')}`,
+  ]);
+
   logger.info(`Project analysis started: ${options.projectName}`);
-  logger.info(`Source files found: \n${projectSourceFiles.map((f: any) => f.getFilePath()).join('\n')}`);
+  logger.info(`Source files found: \n${projectSourceFiles.map(f => f.getFilePath()).join('\n')}`);
   const analysis: DependencyAnalysis = {
     externalImports: new Map(),
     internalImports: new Set(),
