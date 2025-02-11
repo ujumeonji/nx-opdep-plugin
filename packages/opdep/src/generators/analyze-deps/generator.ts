@@ -1,6 +1,6 @@
 import { Tree, formatFiles, getProjects } from '@nx/devkit';
 import { AnalyzeDepsGeneratorSchema } from './schema';
-import { Project, SyntaxKind, ts, Node } from 'ts-morph';
+import { Project, SyntaxKind, ts, Node, ImportDeclaration } from 'ts-morph';
 import * as path from 'path';
 
 interface PackageJson {
@@ -143,28 +143,24 @@ export async function analyzeDepsGenerator(
   });
 
   const srcDir = path.join(project.root, 'src');
-  tsProject.addSourceFilesAtPaths(path.join(srcDir, '**/*.{ts,tsx}'));
+  const projectSourceFiles = tsProject.addSourceFilesAtPaths(path.join(srcDir, '**/*.{ts,tsx}'));
 
-  const sourceFiles = tsProject.getSourceFiles();
-  console.log('Source files found:', sourceFiles.map(f => f.getFilePath()));
+  console.log(`Analyzing project: ${options.projectName}`);
+  console.log('Source files found:', projectSourceFiles.map(f => f.getFilePath()));
 
   const analysis: DependencyAnalysis = {
     externalImports: new Map(),
     internalImports: new Set(),
-    internalAliasImports: new Set(),
+    internalAliasImports: new Set()
   };
 
-  const context: ImportAnalysisContext = {
-    paths: tsConfig.compilerOptions?.paths || {},
-    internalPatterns: [createRegexPattern(project.root)],
-    packageJson,
-  };
-
-  for (const sourceFile of sourceFiles) {
+  for (const sourceFile of projectSourceFiles) {
     const imports = sourceFile.getImportDeclarations();
+    const baseDir = path.dirname(sourceFile.getFilePath());
+
     for (const importDecl of imports) {
       const moduleSpecifier = importDecl.getModuleSpecifierValue();
-      analyzeImport(moduleSpecifier, analysis, project.root, context, importDecl);
+      analyzeImport(moduleSpecifier, analysis, baseDir, { packageJson, tsConfig }, importDecl);
     }
   }
 
@@ -196,25 +192,56 @@ function analyzeImport(
   moduleSpecifier: string,
   analysis: DependencyAnalysis,
   baseDir: string,
-  context: ImportAnalysisContext,
-  importDecl?: any
+  context: { packageJson: any; tsConfig: any },
+  importDecl?: ImportDeclaration,
+  analyzedPaths: Set<string> = new Set()
 ) {
-  if (isNodeModule(moduleSpecifier, context)) {
-    const packageName = extractPackageName(moduleSpecifier);
-    if (!analysis.externalImports.has(packageName)) {
-      analysis.externalImports.set(packageName, new Set());
+  if (moduleSpecifier.startsWith('.')) {
+    const absolutePath = path.resolve(baseDir, moduleSpecifier);
+    if (!analyzedPaths.has(absolutePath)) {
+      analyzedPaths.add(absolutePath);
+      analysis.internalImports.add(moduleSpecifier);
+
+      const sourceFile = importDecl?.getSourceFile().getProject().getSourceFile(absolutePath + '.ts') ||
+                        importDecl?.getSourceFile().getProject().getSourceFile(absolutePath + '.tsx');
+      
+      if (sourceFile) {
+        const imports = sourceFile.getImportDeclarations();
+        const newBaseDir = path.dirname(sourceFile.getFilePath());
+        
+        for (const subImport of imports) {
+          const subModuleSpecifier = subImport.getModuleSpecifierValue();
+          analyzeImport(subModuleSpecifier, analysis, newBaseDir, context, subImport, analyzedPaths);
+        }
+      }
     }
-    const imports = analysis.externalImports.get(packageName)!;
-    const namedImports = importDecl?.getNamedImports();
-    if (namedImports?.length > 0) {
-      namedImports.forEach((namedImport: any) => {
-        imports.add(namedImport.getName());
-      });
+  } else if (moduleSpecifier.startsWith('@')) {
+    const paths = context.tsConfig.compilerOptions?.paths || {};
+    const matchingAlias = Object.keys(paths).find(alias => 
+      moduleSpecifier.startsWith(alias.replace('/*', ''))
+    );
+
+    if (matchingAlias) {
+      analysis.internalAliasImports.add(moduleSpecifier);
+    } else {
+      const imports = importDecl ? 
+        importDecl.getNamedImports().map(named => named.getName()) : 
+        [];
+      
+      if (!analysis.externalImports.has(moduleSpecifier)) {
+        analysis.externalImports.set(moduleSpecifier, new Set());
+      }
+      imports.forEach(imp => analysis.externalImports.get(moduleSpecifier)?.add(imp));
     }
-  } else if (isInternalAlias(moduleSpecifier, context)) {
-    analysis.internalAliasImports.add(moduleSpecifier);
   } else {
-    analysis.internalImports.add(moduleSpecifier);
+    const imports = importDecl ? 
+      importDecl.getNamedImports().map(named => named.getName()) : 
+      [];
+    
+    if (!analysis.externalImports.has(moduleSpecifier)) {
+      analysis.externalImports.set(moduleSpecifier, new Set());
+    }
+    imports.forEach(imp => analysis.externalImports.get(moduleSpecifier)?.add(imp));
   }
 }
 
