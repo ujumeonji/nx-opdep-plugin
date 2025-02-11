@@ -17,17 +17,6 @@ interface DependencyAnalysis {
   internalAliasImports: Set<string>;
 }
 
-interface TsConfigPaths {
-  [key: string]: string[];
-}
-
-interface ImportAnalysisContext {
-  paths: TsConfigPaths;
-  internalPatterns: RegExp[];
-  packageJson: PackageJson;
-  aliasPatterns?: string[];
-}
-
 function readJsonFromTree(tree: Tree, filePath: string): any {
   const content = tree.read(filePath, 'utf-8');
   if (!content) {
