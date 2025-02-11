@@ -1,4 +1,4 @@
-import { Tree, formatFiles, getProjects, logger } from '@nx/devkit';
+import { Tree, formatFiles, getProjects, logger, workspaceRoot } from '@nx/devkit';
 import { AnalyzeDepsGeneratorSchema } from './schema';
 import { Project, ImportDeclaration } from 'ts-morph';
 import * as path from 'path';
@@ -15,6 +15,11 @@ interface DependencyAnalysis {
   externalImports: Map<string, Set<string>>;
   internalImports: Set<string>;
   internalAliasImports: Set<string>;
+}
+
+interface WorkspaceLibrary {
+  name: string;
+  root: string;
 }
 
 function readJsonFromTree(tree: Tree, filePath: string): any {
@@ -57,11 +62,31 @@ function analyzeProjectDependencies(tree: Tree, projectRoot: string): PackageJso
 
 const MAX_RECURSION_DEPTH = 50;
 
+function getWorkspaceLibraries(tree: Tree): Map<string, WorkspaceLibrary> {
+  const libraries = new Map<string, WorkspaceLibrary>();
+  const projects = getProjects(tree);
+
+  for (const [name, config] of projects.entries()) {
+    if (config.root.startsWith('libs/')) {
+      libraries.set(name, {
+        name,
+        root: config.root
+      });
+    }
+  }
+
+  return libraries;
+}
+
 function analyzeImport(
   moduleSpecifier: string,
   analysis: DependencyAnalysis,
   baseDir: string,
-  context: { packageJson: any; tsConfig: any },
+  context: {
+    packageJson: any;
+    tsConfig: any;
+    workspaceLibs: Map<string, WorkspaceLibrary>;
+  },
   importDecl?: ImportDeclaration,
   analyzedPaths: Set<string> = new Set(),
   depth: number = 0
@@ -167,11 +192,19 @@ function analyzeImport(
         }
       }
     } else {
-      const imports = importDecl ? importDecl.getNamedImports().map(named => named.getName()) : [];
-      if (!analysis.externalImports.has(moduleSpecifier)) {
-        analysis.externalImports.set(moduleSpecifier, new Set());
+      const isWorkspaceLib = Array.from(context.workspaceLibs.values()).some(lib =>
+        moduleSpecifier.startsWith(`@${lib.name}/`) || moduleSpecifier === `@${lib.name}`
+      );
+
+      if (isWorkspaceLib) {
+        analysis.internalImports.add(moduleSpecifier);
+      } else {
+        const imports = importDecl ? importDecl.getNamedImports().map(named => named.getName()) : [];
+        if (!analysis.externalImports.has(moduleSpecifier)) {
+          analysis.externalImports.set(moduleSpecifier, new Set());
+        }
+        imports.forEach(imp => analysis.externalImports.get(moduleSpecifier)?.add(imp));
       }
-      imports.forEach(imp => analysis.externalImports.get(moduleSpecifier)?.add(imp));
     }
   } else {
     const imports = importDecl ? importDecl.getNamedImports().map(named => named.getName()) : [];
@@ -216,20 +249,28 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
     internalImports: new Set(),
     internalAliasImports: new Set()
   };
+
+  const workspaceLibs = getWorkspaceLibraries(tree);
+
   for (const sourceFile of projectSourceFiles) {
     const baseDir = path.dirname(sourceFile.getFilePath());
-
     const imports = sourceFile.getImportDeclarations();
     for (const importDecl of imports) {
       const moduleSpecifier = importDecl.getModuleSpecifierValue();
-      analyzeImport(moduleSpecifier, analysis, baseDir, { packageJson, tsConfig }, importDecl);
+      analyzeImport(
+        moduleSpecifier,
+        analysis,
+        baseDir,
+        { packageJson, tsConfig, workspaceLibs },
+        importDecl
+      );
     }
 
     const exports = sourceFile.getExportDeclarations();
     for (const exportDecl of exports) {
       const moduleSpecifier = exportDecl.getModuleSpecifierValue();
       if (moduleSpecifier) {
-        analyzeImport(moduleSpecifier, analysis, baseDir, { packageJson, tsConfig }, exportDecl as any);
+        analyzeImport(moduleSpecifier, analysis, baseDir, { packageJson, tsConfig, workspaceLibs }, exportDecl as any);
       }
     }
   }
