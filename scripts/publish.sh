@@ -23,10 +23,19 @@ print_step() {
   echo -e "\n${YELLOW}Step: $1${NC}"
 }
 
+# Insert the dependency installation step before version update
+print_step "Installing dependencies"
+pnpm install
+
 # Update version in package.json
 print_step "Updating version to $NEW_VERSION"
 cd packages/opdep
-npm version $NEW_VERSION --no-git-tag-version
+CURRENT_VERSION=$(node -p "require('./package.json').version")
+if [ "$CURRENT_VERSION" != "$NEW_VERSION" ]; then
+  npm version $NEW_VERSION --no-git-tag-version
+else
+  echo "Version is already $NEW_VERSION, skipping version update."
+fi
 cd ../..
 
 # Build the project
