@@ -217,11 +217,20 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
     internalAliasImports: new Set()
   };
   for (const sourceFile of projectSourceFiles) {
-    const imports = sourceFile.getImportDeclarations();
     const baseDir = path.dirname(sourceFile.getFilePath());
+
+    const imports = sourceFile.getImportDeclarations();
     for (const importDecl of imports) {
       const moduleSpecifier = importDecl.getModuleSpecifierValue();
       analyzeImport(moduleSpecifier, analysis, baseDir, { packageJson, tsConfig }, importDecl);
+    }
+
+    const exports = sourceFile.getExportDeclarations();
+    for (const exportDecl of exports) {
+      const moduleSpecifier = exportDecl.getModuleSpecifierValue();
+      if (moduleSpecifier) {
+        analyzeImport(moduleSpecifier, analysis, baseDir, { packageJson, tsConfig }, exportDecl as any);
+      }
     }
   }
 
