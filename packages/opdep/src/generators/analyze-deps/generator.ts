@@ -51,31 +51,6 @@ function analyzeProjectDependencies(tree: Tree, projectRoot: string): PackageJso
   if (!packageJson) {
     throw new Error(`No package.json found for project at ${projectRoot}`);
   }
-  const allDependencies = {
-    ...packageJson.dependencies,
-    ...packageJson.devDependencies,
-    ...packageJson.peerDependencies,
-  };
-  const projects = getProjects(tree);
-  for (const [, project] of projects) {
-    if (project.root !== projectRoot && allDependencies[project.name]) {
-      const subPackageJson = analyzeProjectDependencies(tree, project.root);
-      packageJson.dependencies = {
-        ...packageJson.dependencies,
-        ...subPackageJson.dependencies,
-      };
-      packageJson.devDependencies = {
-        ...packageJson.devDependencies,
-        ...subPackageJson.devDependencies,
-      };
-      if (subPackageJson.peerDependencies) {
-        packageJson.peerDependencies = {
-          ...packageJson.peerDependencies,
-          ...subPackageJson.peerDependencies,
-        };
-      }
-    }
-  }
   dependencyCache.set(projectRoot, packageJson);
   return packageJson;
 }
