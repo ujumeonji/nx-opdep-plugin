@@ -129,7 +129,7 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
   const srcDir = path.join(project.root, 'src');
   const projectSourceFiles = tsProject.addSourceFilesAtPaths(path.join(srcDir, '**/*.{ts,tsx}'));
   logger.info(`Project analysis started: ${options.projectName}`);
-  logger.info(`Source files found: ${projectSourceFiles.map((f: any) => f.getFilePath())}`);
+  logger.info(`Source files found: \n${projectSourceFiles.map((f: any) => f.getFilePath()).join('\n')}`);
   const analysis: DependencyAnalysis = {
     externalImports: new Map(),
     internalImports: new Set(),
