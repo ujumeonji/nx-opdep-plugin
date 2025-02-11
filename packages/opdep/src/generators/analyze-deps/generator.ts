@@ -70,6 +70,13 @@ function analyzeImport(
     logger.warn(`Max recursion depth (${MAX_RECURSION_DEPTH}) exceeded: ${moduleSpecifier}`);
     return;
   }
+
+  const fullPath = path.resolve(baseDir, moduleSpecifier);
+  if (analyzedPaths.has(fullPath)) {
+    return;
+  }
+  analyzedPaths.add(fullPath);
+
   if (moduleSpecifier.startsWith('.')) {
     const absolutePath = path.resolve(baseDir, moduleSpecifier);
     if (!analyzedPaths.has(absolutePath)) {
@@ -94,8 +101,37 @@ function analyzeImport(
     const matchingAlias = Object.keys(paths).find(alias =>
       moduleSpecifier.startsWith(alias.replace('/*', ''))
     );
+
     if (matchingAlias) {
       analysis.internalAliasImports.add(moduleSpecifier);
+
+      const aliasPath = paths[matchingAlias][0].replace('/*', '');
+      const relativePath = moduleSpecifier.replace(matchingAlias.replace('/*', ''), '');
+      const fullPath = path.join(aliasPath, relativePath);
+
+      const project = importDecl?.getSourceFile().getProject();
+      let sourceFile = project?.getSourceFile(fullPath + '.ts');
+      if (!sourceFile) {
+        sourceFile = project?.getSourceFile(fullPath + '.tsx');
+      }
+
+      if (sourceFile) {
+        const imports = sourceFile.getImportDeclarations();
+        const newBaseDir = path.dirname(sourceFile.getFilePath());
+
+        for (const subImport of imports) {
+          const subModuleSpecifier = subImport.getModuleSpecifierValue();
+          analyzeImport(
+            subModuleSpecifier,
+            analysis,
+            newBaseDir,
+            context,
+            subImport,
+            analyzedPaths,
+            depth + 1
+          );
+        }
+      }
     } else {
       const imports = importDecl ? importDecl.getNamedImports().map(named => named.getName()) : [];
       if (!analysis.externalImports.has(moduleSpecifier)) {
@@ -143,13 +179,40 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
       analyzeImport(moduleSpecifier, analysis, baseDir, { packageJson, tsConfig }, importDecl);
     }
   }
+
+  const usedDependencies: { [key: string]: string } = {};
+  const usedDevDependencies: { [key: string]: string } = {};
+
+  for (const [moduleName] of analysis.externalImports) {
+    if (packageJson.dependencies && packageJson.dependencies[moduleName]) {
+      usedDependencies[moduleName] = packageJson.dependencies[moduleName];
+    } else if (packageJson.devDependencies && packageJson.devDependencies[moduleName]) {
+      usedDevDependencies[moduleName] = packageJson.devDependencies[moduleName];
+    }
+  }
+
   const outputPath = path.join(project.root, 'opdep.json');
   const output = {
-    dependencies: packageJson.dependencies || {},
-    devDependencies: packageJson.devDependencies || {}
+    dependencies: usedDependencies,
+    devDependencies: usedDevDependencies,
+    analysis: {
+      externalImports: Object.fromEntries(
+        Array.from(analysis.externalImports.entries()).map(([key, value]) => [
+          key,
+          Array.from(value)
+        ])
+      ),
+      internalImports: Array.from(analysis.internalImports),
+      internalAliasImports: Array.from(analysis.internalAliasImports)
+    }
   };
+
   writeJsonToTree(tree, outputPath, output);
   await formatFiles(tree);
+
+  logger.info(`Analysis complete for ${options.projectName}`);
+  logger.info(`Found ${Object.keys(usedDependencies).length} used dependencies`);
+  logger.info(`Found ${Object.keys(usedDevDependencies).length} used dev dependencies`);
 }
 
 export default analyzeDepsGenerator;
