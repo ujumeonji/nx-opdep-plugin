@@ -139,9 +139,15 @@ export async function analyzeDepsGenerator(
 
   const tsProject = new Project({
     tsConfigFilePath: tsConfigPath,
+    skipAddingFilesFromTsConfig: true
   });
 
+  const srcDir = path.join(project.root, 'src');
+  tsProject.addSourceFilesAtPaths(path.join(srcDir, '**/*.{ts,tsx}'));
+
   const sourceFiles = tsProject.getSourceFiles();
+  console.log('Source files found:', sourceFiles.map(f => f.getFilePath()));
+
   const analysis: DependencyAnalysis = {
     externalImports: new Map(),
     internalImports: new Set(),
@@ -164,14 +170,8 @@ export async function analyzeDepsGenerator(
 
   const outputPath = path.join(project.root, 'opdep.json');
   const output = {
-    externalImports: Object.fromEntries(
-      Array.from(analysis.externalImports.entries()).map(([key, value]) => [
-        key,
-        Array.from(value),
-      ])
-    ),
-    internalImports: Array.from(analysis.internalImports),
-    internalAliasImports: Array.from(analysis.internalAliasImports),
+    dependencies: packageJson.dependencies || {},
+    devDependencies: packageJson.devDependencies || {}
   };
 
   writeJsonToTree(tree, outputPath, output);
