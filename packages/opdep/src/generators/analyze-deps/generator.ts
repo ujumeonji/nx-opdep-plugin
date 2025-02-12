@@ -174,8 +174,11 @@ function analyzeImport(
         sourceFile = project?.getSourceFile(absolutePath + '.tsx');
       }
       if (sourceFile) {
-        const imports = sourceFile.getImportDeclarations();
+        if (depth > 0) {
+          logger.info(`Recursively exploring file: ${sourceFile.getFilePath()}`);
+        }
         const newBaseDir = path.dirname(sourceFile.getFilePath());
+        const imports = sourceFile.getImportDeclarations();
         for (const subImport of imports) {
           const subModuleSpecifier = subImport.getModuleSpecifierValue();
           analyzeImport(subModuleSpecifier, analysis, newBaseDir, context, subImport, analyzedPaths, depth + 1);
@@ -236,8 +239,11 @@ function analyzeImport(
       }
 
       if (sourceFile) {
-        const imports = sourceFile.getImportDeclarations();
+        if (depth > 0) {
+          logger.info(`Recursively exploring file: ${sourceFile.getFilePath()}`);
+        }
         const newBaseDir = path.dirname(sourceFile.getFilePath());
+        const imports = sourceFile.getImportDeclarations();
 
         for (const subImport of imports) {
           const subModuleSpecifier = subImport.getModuleSpecifierValue();
@@ -295,11 +301,9 @@ function analyzeImport(
         analysis.internalImports.add(moduleSpecifier);
 
         try {
-          // TypeScript 설정 파일들을 찾고 병합
           const tsConfigFiles = findTsConfigFiles(context.tree, workspaceLib.root);
           const mergedTsConfig = mergeTsConfigs(context.tree, tsConfigFiles);
 
-          // 병합된 설정으로 Project 초기화
           const libProject = new Project({
             compilerOptions: mergedTsConfig.compilerOptions,
             skipAddingFilesFromTsConfig: true
@@ -319,16 +323,16 @@ function analyzeImport(
 
           for (const sourceFile of libSourceFiles) {
             const libBaseDir = path.dirname(sourceFile.getFilePath());
-
+            logger.info(`Recursively exploring workspace library file: ${sourceFile.getFilePath()}`);
             const imports = sourceFile.getImportDeclarations();
-            for (const importDecl of imports) {
-              const subModuleSpecifier = importDecl.getModuleSpecifierValue();
+            for (const subImport of imports) {
+              const subModuleSpecifier = subImport.getModuleSpecifierValue();
               analyzeImport(
                 subModuleSpecifier,
                 analysis,
                 libBaseDir,
                 context,
-                importDecl,
+                subImport,
                 analyzedPaths,
                 depth + 1
               );
@@ -370,11 +374,11 @@ function analyzeImport(
       }
     }
   } else {
-    const imports = importDecl ? importDecl.getNamedImports().map(named => named.getName()) : [];
+    const names = importDecl ? importDecl.getNamedImports().map(named => named.getName()) : [];
     if (!analysis.externalImports.has(moduleSpecifier)) {
       analysis.externalImports.set(moduleSpecifier, new Set());
     }
-    imports.forEach(imp => analysis.externalImports.get(moduleSpecifier)?.add(imp));
+    names.forEach(name => analysis.externalImports.get(moduleSpecifier)?.add(name));
   }
 }
 
@@ -406,7 +410,6 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
   ]);
 
   logger.info(`Project analysis started: ${options.projectName}`);
-  logger.info(`Source files found: \n${projectSourceFiles.map(f => f.getFilePath()).join('\n')}`);
   const analysis: DependencyAnalysis = {
     externalImports: new Map(),
     internalImports: new Set(),
