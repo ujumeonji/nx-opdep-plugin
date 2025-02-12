@@ -2,7 +2,6 @@ import { Tree, formatFiles, getProjects, logger } from '@nx/devkit';
 import { AnalyzeDepsGeneratorSchema } from './schema';
 import { Project, ImportDeclaration } from 'ts-morph';
 import * as path from 'path';
-import * as fs from 'fs';
 
 interface PackageJson {
   name: string;
