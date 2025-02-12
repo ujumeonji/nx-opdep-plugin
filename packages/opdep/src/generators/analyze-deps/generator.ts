@@ -2,6 +2,7 @@ import { Tree, formatFiles, getProjects, logger } from '@nx/devkit';
 import { AnalyzeDepsGeneratorSchema } from './schema';
 import { Project, ImportDeclaration } from 'ts-morph';
 import * as path from 'path';
+import * as fs from 'fs';
 
 interface PackageJson {
   name: string;
@@ -76,6 +77,66 @@ function getWorkspaceLibraries(tree: Tree): Map<string, WorkspaceLibrary> {
   }
 
   return libraries;
+}
+
+function findTsConfigFiles(tree: Tree, libRoot: string): string[] {
+  const workspaceRoot = tree.root;
+  const configFiles = [];
+
+  const baseTsConfigPath = path.join(workspaceRoot, 'tsconfig.base.json');
+  if (tree.exists(baseTsConfigPath)) {
+    configFiles.push(baseTsConfigPath);
+  }
+
+  const libTsConfigPath = path.join(libRoot, 'tsconfig.json');
+  if (tree.exists(libTsConfigPath)) {
+    configFiles.push(libTsConfigPath);
+  }
+
+  const libSpecificTsConfigPath = path.join(libRoot, 'tsconfig.lib.json');
+  if (tree.exists(libSpecificTsConfigPath)) {
+    configFiles.push(libSpecificTsConfigPath);
+  }
+
+  return configFiles;
+}
+
+function mergeTsConfigs(tree: Tree, configFiles: string[]): any {
+  let mergedConfig: any = {};
+
+  for (const configFile of configFiles) {
+    try {
+      const config = readJsonFromTree(tree, configFile);
+
+      if (config.extends) {
+        const extendsPath = path.resolve(path.dirname(configFile), config.extends);
+        if (tree.exists(extendsPath)) {
+          const baseConfig = readJsonFromTree(tree, extendsPath);
+          mergedConfig = deepMerge(mergedConfig, baseConfig);
+        }
+      }
+
+      mergedConfig = deepMerge(mergedConfig, config);
+    } catch (error) {
+      logger.warn(`Failed to parse TypeScript config at ${configFile}: ${error}`);
+    }
+  }
+
+  return mergedConfig;
+}
+
+function deepMerge(target: any, source: any): any {
+  const result = { ...target };
+
+  for (const key in source) {
+    if (source[key] instanceof Object && key in target) {
+      result[key] = deepMerge(target[key], source[key]);
+    } else {
+      result[key] = source[key];
+    }
+  }
+
+  return result;
 }
 
 function analyzeImport(
@@ -235,9 +296,13 @@ function analyzeImport(
         analysis.internalImports.add(moduleSpecifier);
 
         try {
-          const libTsConfigPath = path.join(workspaceLib.root, 'tsconfig.json');
+          // TypeScript 설정 파일들을 찾고 병합
+          const tsConfigFiles = findTsConfigFiles(context.tree, workspaceLib.root);
+          const mergedTsConfig = mergeTsConfigs(context.tree, tsConfigFiles);
+
+          // 병합된 설정으로 Project 초기화
           const libProject = new Project({
-            tsConfigFilePath: libTsConfigPath,
+            compilerOptions: mergedTsConfig.compilerOptions,
             skipAddingFilesFromTsConfig: true
           });
 
