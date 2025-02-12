@@ -191,6 +191,40 @@ function analyzeImport(
             depth + 1
           );
         }
+
+        const exports = sourceFile.getExportDeclarations();
+        for (const exportDecl of exports) {
+          const exportModuleSpecifier = exportDecl.getModuleSpecifierValue();
+          if (exportModuleSpecifier) {
+            analyzeImport(
+              exportModuleSpecifier,
+              analysis,
+              newBaseDir,
+              context,
+              exportDecl as any,
+              analyzedPaths,
+              depth + 1
+            );
+          }
+        }
+
+        const exportStars = sourceFile.getExportDeclarations().filter(exp =>
+          exp.isNamespaceExport() && exp.getModuleSpecifierValue()
+        );
+        for (const exportStar of exportStars) {
+          const starModuleSpecifier = exportStar.getModuleSpecifierValue();
+          if (starModuleSpecifier) {
+            analyzeImport(
+              starModuleSpecifier,
+              analysis,
+              newBaseDir,
+              context,
+              exportStar as any,
+              analyzedPaths,
+              depth + 1
+            );
+          }
+        }
       }
     } else {
       const workspaceLib = Array.from(context.workspaceLibs.values()).find(lib =>
@@ -211,8 +245,12 @@ function analyzeImport(
             path.join(workspaceLib.root, '**/*.ts'),
             path.join(workspaceLib.root, '**/*.tsx'),
             `!${path.join(workspaceLib.root, 'node_modules/**/*')}`,
+            `!${path.join(workspaceLib.root, 'dist/**/*')}`,
+            `!${path.join(workspaceLib.root, 'build/**/*')}`,
             `!${path.join(workspaceLib.root, '**/*.spec.ts')}`,
             `!${path.join(workspaceLib.root, '**/*.test.ts')}`,
+            `!${path.join(workspaceLib.root, '**/*.spec.tsx')}`,
+            `!${path.join(workspaceLib.root, '**/*.test.tsx')}`,
           ]);
 
           for (const sourceFile of libSourceFiles) {
