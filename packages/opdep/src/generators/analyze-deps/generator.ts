@@ -418,6 +418,8 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
 
   const workspaceLibs = getWorkspaceLibraries(tree);
 
+  const analyzedPaths = new Set<string>();
+
   for (const sourceFile of projectSourceFiles) {
     const baseDir = path.dirname(sourceFile.getFilePath());
     const imports = sourceFile.getImportDeclarations();
@@ -428,7 +430,8 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
         analysis,
         baseDir,
         { packageJson, tsConfig, workspaceLibs, tree },
-        importDecl
+        importDecl,
+        analyzedPaths
       );
     }
 
@@ -441,10 +444,17 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
           analysis,
           baseDir,
           { packageJson, tsConfig, workspaceLibs, tree },
-          exportDecl as any
+          exportDecl as any,
+          analyzedPaths
         );
       }
     }
+  }
+
+  logger.info(`Analyzed ${analyzedPaths.size} paths`);
+  logger.info('Analyzed paths:');
+  for (const path of analyzedPaths) {
+    logger.info(`  ${path}`);
   }
 
   const usedDependencies: { [key: string]: string } = {};
