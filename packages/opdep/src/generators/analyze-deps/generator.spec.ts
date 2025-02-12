@@ -197,10 +197,17 @@ describe('analyze-deps generator', () => {
     )
 
     // Execute generator
-    await analyzeDepsGenerator(tree, { projectName: 'test-project' })
+    await analyzeDepsGenerator(tree, { 
+      projectName: 'test-project',
+      outputPath: 'opdep.json'
+    })
 
     // Verify output
-    const output = JSON.parse(tree.read('opdep.json', 'utf-8'))
+    const content = tree.read('opdep.json', 'utf-8');
+    if (!content) {
+      throw new Error('Failed to read opdep.json');
+    }
+    const output = JSON.parse(content);
 
     expect(output.dependencies).toHaveProperty('@nestjs/core')
     expect(output.dependencies).not.toHaveProperty('unused-dep')
@@ -257,9 +264,16 @@ describe('analyze-deps generator', () => {
       `
     )
 
-    await analyzeDepsGenerator(tree, { projectName: 'test-project' })
+    await analyzeDepsGenerator(tree, { 
+      projectName: 'test-project',
+      outputPath: 'opdep.json'
+    })
 
-    const output = JSON.parse(tree.read('opdep.json', 'utf-8'))
+    const content = tree.read('opdep.json', 'utf-8');
+    if (!content) {
+      throw new Error('Failed to read opdep.json');
+    }
+    const output = JSON.parse(content);
 
     expect(output.dependencies).toHaveProperty('@nestjs/common')
     expect(output.analysis.internalAliasImports).toContain('@libs/shared')
@@ -313,7 +327,10 @@ describe('analyze-deps generator', () => {
     )
 
     await expect(
-      analyzeDepsGenerator(tree, { projectName: 'test-project' })
+      analyzeDepsGenerator(tree, { 
+        projectName: 'test-project',
+        outputPath: 'opdep.json'
+      })
     ).resolves.not.toThrow()
   })
 
@@ -348,7 +365,10 @@ describe('analyze-deps generator', () => {
     )
 
     await expect(
-      analyzeDepsGenerator(tree, { projectName: 'test-project' })
+      analyzeDepsGenerator(tree, { 
+        projectName: 'test-project',
+        outputPath: 'opdep.json'
+      })
     ).resolves.not.toThrow()
   })
 
@@ -420,9 +440,16 @@ describe('analyze-deps generator', () => {
       `
     )
 
-    await analyzeDepsGenerator(tree, { projectName: 'test-project' })
+    await analyzeDepsGenerator(tree, { 
+      projectName: 'test-project',
+      outputPath: 'opdep.json'
+    })
 
-    const output = JSON.parse(tree.read('opdep.json', 'utf-8'))
+    const content = tree.read('opdep.json', 'utf-8');
+    if (!content) {
+      throw new Error('Failed to read opdep.json');
+    }
+    const output = JSON.parse(content);
 
     // Should detect dependencies from both re-exported files
     expect(output.dependencies).toHaveProperty('@nestjs/common')
