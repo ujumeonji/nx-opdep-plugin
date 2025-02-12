@@ -1,4 +1,4 @@
-import { Tree, formatFiles, getProjects, logger, workspaceRoot } from '@nx/devkit';
+import { Tree, formatFiles, getProjects, logger } from '@nx/devkit';
 import { AnalyzeDepsGeneratorSchema } from './schema';
 import { Project, ImportDeclaration } from 'ts-morph';
 import * as path from 'path';
@@ -202,7 +202,6 @@ function analyzeImport(
 
         try {
           const libTsConfigPath = path.join(workspaceLib.root, 'tsconfig.json');
-          const libTsConfig = readJsonFromTree(context.tree, libTsConfigPath);
           const libProject = new Project({
             tsConfigFilePath: libTsConfigPath,
             skipAddingFilesFromTsConfig: true
