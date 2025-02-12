@@ -152,6 +152,8 @@ function analyzeImport(
   analyzedPaths: Set<string> = new Set(),
   depth: number = 0
 ) {
+  logger.info(`Analyzing import: ${moduleSpecifier}`);
+
   if (depth > MAX_RECURSION_DEPTH) {
     logger.warn(`Max recursion depth (${MAX_RECURSION_DEPTH}) exceeded: ${moduleSpecifier}`);
     return;
@@ -452,10 +454,6 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
   }
 
   logger.info(`Analyzed ${analyzedPaths.size} paths`);
-  logger.info('Analyzed paths:');
-  for (const path of analyzedPaths) {
-    logger.info(`  ${path}`);
-  }
 
   const usedDependencies: { [key: string]: string } = {};
   const usedDevDependencies: { [key: string]: string } = {};
