@@ -104,76 +104,26 @@ function findAllTsConfigFiles(tree: Tree, projectRoot: string): string[] {
   return Array.from(tsConfigFiles);
 }
 
-function mergeTsConfigs(tree: Tree, configFiles: string[]): any {
-  let mergedConfig: any = {};
-  let allPaths: Record<string, string[]> = {};
+function getRootTsConfig(tree: Tree): any {
+  const rootTsConfigPath = '/tsconfig.base.json'
+  if (!tree.exists(rootTsConfigPath)) {
+    logger.warn('No tsconfig.base.json found in workspace root')
+    return { compilerOptions: { paths: {} } }
+  }
 
-  for (const configFile of configFiles) {
-    try {
-      const config = readJsonFromTree(tree, configFile);
-      const configDir = path.dirname(configFile);
-
-      if (config.extends) {
-        const extendsPath = path.resolve(configDir, config.extends);
-        if (tree.exists(extendsPath)) {
-          const baseConfig = readJsonFromTree(tree, extendsPath);
-          if (baseConfig.compilerOptions?.paths) {
-            Object.entries(baseConfig.compilerOptions.paths).forEach(([key, value]) => {
-              const resolvedPaths = (value as string[]).map(p =>
-                path.isAbsolute(p) ? p : path.resolve(path.dirname(extendsPath), p)
-              );
-              allPaths[key] = [...(allPaths[key] || []), ...resolvedPaths];
-            });
-          }
-          mergedConfig = deepMerge(mergedConfig, baseConfig);
-        }
+  try {
+    const config = readJsonFromTree(tree, rootTsConfigPath)
+    return {
+      ...config,
+      compilerOptions: {
+        ...config.compilerOptions,
+        paths: config.compilerOptions?.paths || {}
       }
-
-      if (config.compilerOptions?.paths) {
-        Object.entries(config.compilerOptions.paths).forEach(([key, value]) => {
-          const resolvedPaths = (value as string[]).map(p =>
-            path.isAbsolute(p) ? p : path.resolve(configDir, p)
-          );
-          allPaths[key] = [...(allPaths[key] || []), ...resolvedPaths];
-        });
-      }
-
-      mergedConfig = deepMerge(mergedConfig, config);
-    } catch (error) {
-      logger.warn(`Failed to parse TypeScript config at ${configFile}: ${error}`);
     }
+  } catch (error) {
+    logger.warn(`Failed to parse TypeScript config at ${rootTsConfigPath}: ${error}`)
+    return { compilerOptions: { paths: {} } }
   }
-
-  if (!mergedConfig.compilerOptions) {
-    mergedConfig.compilerOptions = {};
-  }
-
-  if (!mergedConfig.compilerOptions.paths) {
-    mergedConfig.compilerOptions.paths = {};
-  }
-
-  mergedConfig.compilerOptions.paths = Object.fromEntries(
-    Object.entries(allPaths).map(([key, paths]) => [
-      key,
-      [...new Set(paths)]
-    ])
-  );
-
-  return mergedConfig;
-}
-
-function deepMerge(target: any, source: any): any {
-  const result = { ...target };
-
-  for (const key in source) {
-    if (source[key] instanceof Object && key in target) {
-      result[key] = deepMerge(target[key], source[key]);
-    } else {
-      result[key] = source[key];
-    }
-  }
-
-  return result;
 }
 
 function analyzeImport(
@@ -347,11 +297,7 @@ function analyzeImport(
         analysis.internalImports.add(moduleSpecifier);
 
         try {
-          const tsConfigFiles = findAllTsConfigFiles(context.tree, workspaceLib.root);
-          const mergedTsConfig = mergeTsConfigs(context.tree, tsConfigFiles);
-
           const libProject = new Project({
-            compilerOptions: mergedTsConfig.compilerOptions,
             skipAddingFilesFromTsConfig: true
           });
 
@@ -440,13 +386,11 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
   const tsConfigFiles = findAllTsConfigFiles(tree, projectRoot);
   logger.info(`tsConfigFiles: ${tsConfigFiles}`);
 
-  const tsConfig = mergeTsConfigs(tree, tsConfigFiles);
-  const tsConfigPath = tsConfigFiles.length > 0 ? tsConfigFiles[0] : path.join(project.root, 'tsconfig.json');
-  logger.info(`Merged tsConfig content: ${JSON.stringify(tsConfig, null, 2)}`);
+  const tsConfig = getRootTsConfig(tree);
+  logger.info(`Root tsConfig content: ${JSON.stringify(tsConfig, null, 2)}`);
 
   const tsProject = new Project({
     compilerOptions: tsConfig.compilerOptions,
-    tsConfigFilePath: tsConfigPath,
     skipAddingFilesFromTsConfig: true
   });
 
@@ -482,7 +426,7 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
         moduleSpecifier,
         analysis,
         baseDir,
-        { packageJson, tsConfig, workspaceLibs, tree, tsConfigPath },
+        { packageJson, tsConfig, workspaceLibs, tree, tsConfigPath: '' },
         importDecl,
         analyzedPaths
       );
@@ -496,7 +440,7 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
           moduleSpecifier,
           analysis,
           baseDir,
-          { packageJson, tsConfig, workspaceLibs, tree, tsConfigPath },
+          { packageJson, tsConfig, workspaceLibs, tree, tsConfigPath: '' },
           exportDecl as any,
           analyzedPaths
         );
