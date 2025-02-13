@@ -147,6 +147,7 @@ function analyzeImport(
     tsConfig: any;
     workspaceLibs: Map<string, WorkspaceLibrary>;
     tree: Tree;
+    tsConfigPath: string;
   },
   importDecl?: ImportDeclaration,
   analyzedPaths: Set<string> = new Set(),
@@ -230,8 +231,13 @@ function analyzeImport(
     if (matchingAlias) {
       analysis.internalAliasImports.add(moduleSpecifier);
 
-      const aliasPath = paths[matchingAlias][0].replace('/*', '');
-      const relativePath = moduleSpecifier.replace(matchingAlias.replace('/*', ''), '');
+      const aliasRelative = paths[matchingAlias][0].replace('/*', '');
+      const tsconfigDir = path.dirname(context.tsConfigPath);
+      const aliasPath = path.resolve(tsconfigDir, aliasRelative);
+      const aliasPrefix = matchingAlias.replace('/*', '');
+      const relativePath = moduleSpecifier.startsWith(aliasPrefix)
+        ? moduleSpecifier.slice(aliasPrefix.length)
+        : '';
       const fullPath = path.join(aliasPath, relativePath);
 
       const project = importDecl?.getSourceFile().getProject();
@@ -394,6 +400,8 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
   const packageJson = analyzeProjectDependencies(tree, projectRoot);
   const tsConfigPath = path.join(project.root, 'tsconfig.json');
   const tsConfig = readJsonFromTree(tree, tsConfigPath);
+  logger.info(`tsConfig content: ${JSON.stringify(tsConfig, null, 2)}`);
+
   const tsProject = new Project({
     tsConfigFilePath: tsConfigPath,
     skipAddingFilesFromTsConfig: true
@@ -431,7 +439,7 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
         moduleSpecifier,
         analysis,
         baseDir,
-        { packageJson, tsConfig, workspaceLibs, tree },
+        { packageJson, tsConfig, workspaceLibs, tree, tsConfigPath },
         importDecl,
         analyzedPaths
       );
@@ -445,7 +453,7 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
           moduleSpecifier,
           analysis,
           baseDir,
-          { packageJson, tsConfig, workspaceLibs, tree },
+          { packageJson, tsConfig, workspaceLibs, tree, tsConfigPath },
           exportDecl as any,
           analyzedPaths
         );
