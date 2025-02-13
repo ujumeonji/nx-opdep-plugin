@@ -220,8 +220,8 @@ function analyzeImport(
       analysis.internalAliasImports.add(moduleSpecifier);
 
       const aliasRelative = paths[matchingAlias][0].replace('/*', '');
-      const tsconfigDir = path.dirname(context.tsConfigPath);
-      const aliasPath = path.resolve(tsconfigDir, aliasRelative);
+      const workspaceRoot = context.tree.root;
+      const aliasPath = path.resolve(workspaceRoot, aliasRelative);
       const aliasPrefix = matchingAlias.replace('/*', '');
       const relativePath = moduleSpecifier.startsWith(aliasPrefix)
         ? moduleSpecifier.slice(aliasPrefix.length)
