@@ -227,6 +227,7 @@ function analyzeImport(
         ? moduleSpecifier.slice(aliasPrefix.length)
         : '';
       const fullPath = path.join(aliasPath, relativePath);
+      logger.info(`Resolving alias import: ${moduleSpecifier} -> ${fullPath}`);
 
       const project = importDecl?.getSourceFile().getProject();
       let sourceFile = project?.getSourceFile(fullPath + '.ts');
