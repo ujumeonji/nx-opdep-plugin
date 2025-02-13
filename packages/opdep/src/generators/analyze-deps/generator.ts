@@ -79,30 +79,29 @@ function getWorkspaceLibraries(tree: Tree): Map<string, WorkspaceLibrary> {
 }
 
 function findAllTsConfigFiles(tree: Tree, projectRoot: string): string[] {
-  const tsConfigFiles: string[] = [];
-
-  const rootTsConfigPattern = /^tsconfig.*\.json$/;
-  const rootEntries = tree.children(projectRoot);
-  for (const entry of rootEntries) {
-    if (tree.isFile(path.join(projectRoot, entry)) && rootTsConfigPattern.test(entry)) {
-      tsConfigFiles.push(path.join(projectRoot, entry));
-    }
-  }
+  const tsConfigFiles: Set<string> = new Set();
+  const tsConfigPattern = /^tsconfig.*\.json$/;
 
   function searchInDirectory(dirPath: string) {
     const entries = tree.children(dirPath);
     for (const entry of entries) {
       const fullPath = path.join(dirPath, entry);
-      if (tree.isFile(fullPath) && rootTsConfigPattern.test(entry)) {
-        tsConfigFiles.push(fullPath);
-      } else if (tree.exists(fullPath) && !tree.isFile(fullPath)) {
+      if (tree.isFile(fullPath) && tsConfigPattern.test(entry)) {
+        tsConfigFiles.add(fullPath);
+      } else if (!tree.isFile(fullPath)) {
         searchInDirectory(fullPath);
       }
     }
   }
 
   searchInDirectory(projectRoot);
-  return tsConfigFiles;
+
+  const workspaceRoot = tree.root;
+  if (workspaceRoot !== projectRoot) {
+    searchInDirectory(workspaceRoot);
+  }
+
+  return Array.from(tsConfigFiles);
 }
 
 function mergeTsConfigs(tree: Tree, configFiles: string[]): any {
