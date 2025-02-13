@@ -78,41 +78,65 @@ function getWorkspaceLibraries(tree: Tree): Map<string, WorkspaceLibrary> {
   return libraries;
 }
 
-function findTsConfigFiles(tree: Tree, libRoot: string): string[] {
-  const workspaceRoot = tree.root;
-  const configFiles = [];
+function findAllTsConfigFiles(tree: Tree, projectRoot: string): string[] {
+  const tsConfigFiles: string[] = [];
 
-  const baseTsConfigPath = path.join(workspaceRoot, 'tsconfig.base.json');
-  if (tree.exists(baseTsConfigPath)) {
-    configFiles.push(baseTsConfigPath);
+  const rootTsConfigPattern = /^tsconfig.*\.json$/;
+  const rootEntries = tree.children(projectRoot);
+  for (const entry of rootEntries) {
+    if (tree.isFile(path.join(projectRoot, entry)) && rootTsConfigPattern.test(entry)) {
+      tsConfigFiles.push(path.join(projectRoot, entry));
+    }
   }
 
-  const libTsConfigPath = path.join(libRoot, 'tsconfig.json');
-  if (tree.exists(libTsConfigPath)) {
-    configFiles.push(libTsConfigPath);
+  function searchInDirectory(dirPath: string) {
+    const entries = tree.children(dirPath);
+    for (const entry of entries) {
+      const fullPath = path.join(dirPath, entry);
+      if (tree.isFile(fullPath) && rootTsConfigPattern.test(entry)) {
+        tsConfigFiles.push(fullPath);
+      } else if (tree.exists(fullPath) && !tree.isFile(fullPath)) {
+        searchInDirectory(fullPath);
+      }
+    }
   }
 
-  const libSpecificTsConfigPath = path.join(libRoot, 'tsconfig.lib.json');
-  if (tree.exists(libSpecificTsConfigPath)) {
-    configFiles.push(libSpecificTsConfigPath);
-  }
-
-  return configFiles;
+  searchInDirectory(projectRoot);
+  return tsConfigFiles;
 }
 
 function mergeTsConfigs(tree: Tree, configFiles: string[]): any {
   let mergedConfig: any = {};
+  let allPaths: Record<string, string[]> = {};
 
   for (const configFile of configFiles) {
     try {
       const config = readJsonFromTree(tree, configFile);
+      const configDir = path.dirname(configFile);
 
       if (config.extends) {
-        const extendsPath = path.resolve(path.dirname(configFile), config.extends);
+        const extendsPath = path.resolve(configDir, config.extends);
         if (tree.exists(extendsPath)) {
           const baseConfig = readJsonFromTree(tree, extendsPath);
+          if (baseConfig.compilerOptions?.paths) {
+            Object.entries(baseConfig.compilerOptions.paths).forEach(([key, value]) => {
+              const resolvedPaths = (value as string[]).map(p =>
+                path.isAbsolute(p) ? p : path.resolve(path.dirname(extendsPath), p)
+              );
+              allPaths[key] = [...(allPaths[key] || []), ...resolvedPaths];
+            });
+          }
           mergedConfig = deepMerge(mergedConfig, baseConfig);
         }
+      }
+
+      if (config.compilerOptions?.paths) {
+        Object.entries(config.compilerOptions.paths).forEach(([key, value]) => {
+          const resolvedPaths = (value as string[]).map(p =>
+            path.isAbsolute(p) ? p : path.resolve(configDir, p)
+          );
+          allPaths[key] = [...(allPaths[key] || []), ...resolvedPaths];
+        });
       }
 
       mergedConfig = deepMerge(mergedConfig, config);
@@ -120,6 +144,21 @@ function mergeTsConfigs(tree: Tree, configFiles: string[]): any {
       logger.warn(`Failed to parse TypeScript config at ${configFile}: ${error}`);
     }
   }
+
+  if (!mergedConfig.compilerOptions) {
+    mergedConfig.compilerOptions = {};
+  }
+
+  if (!mergedConfig.compilerOptions.paths) {
+    mergedConfig.compilerOptions.paths = {};
+  }
+
+  mergedConfig.compilerOptions.paths = Object.fromEntries(
+    Object.entries(allPaths).map(([key, paths]) => [
+      key,
+      [...new Set(paths)]
+    ])
+  );
 
   return mergedConfig;
 }
@@ -309,7 +348,7 @@ function analyzeImport(
         analysis.internalImports.add(moduleSpecifier);
 
         try {
-          const tsConfigFiles = findTsConfigFiles(context.tree, workspaceLib.root);
+          const tsConfigFiles = findAllTsConfigFiles(context.tree, workspaceLib.root);
           const mergedTsConfig = mergeTsConfigs(context.tree, tsConfigFiles);
 
           const libProject = new Project({
@@ -394,15 +433,18 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
   const projects = getProjects(tree);
   const project = projects.get(options.projectName);
   if (!project) {
-    throw new Error(`Project ${options.projectName} not found`);
+    throw new Error(`Project ${options.projectName} not found in workspace`);
   }
   const projectRoot = project.root;
   const packageJson = analyzeProjectDependencies(tree, projectRoot);
-  const tsConfigPath = path.join(project.root, 'tsconfig.json');
-  const tsConfig = readJsonFromTree(tree, tsConfigPath);
-  logger.info(`tsConfig content: ${JSON.stringify(tsConfig, null, 2)}`);
+
+  const tsConfigFiles = findAllTsConfigFiles(tree, projectRoot);
+  const tsConfig = mergeTsConfigs(tree, tsConfigFiles);
+  const tsConfigPath = tsConfigFiles.length > 0 ? tsConfigFiles[0] : path.join(project.root, 'tsconfig.json');
+  logger.info(`Merged tsConfig content: ${JSON.stringify(tsConfig, null, 2)}`);
 
   const tsProject = new Project({
+    compilerOptions: tsConfig.compilerOptions,
     tsConfigFilePath: tsConfigPath,
     skipAddingFilesFromTsConfig: true
   });
