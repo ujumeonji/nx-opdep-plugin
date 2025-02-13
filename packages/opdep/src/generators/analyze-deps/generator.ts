@@ -439,6 +439,8 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
   const packageJson = analyzeProjectDependencies(tree, projectRoot);
 
   const tsConfigFiles = findAllTsConfigFiles(tree, projectRoot);
+  logger.info(`tsConfigFiles: ${tsConfigFiles}`);
+
   const tsConfig = mergeTsConfigs(tree, tsConfigFiles);
   const tsConfigPath = tsConfigFiles.length > 0 ? tsConfigFiles[0] : path.join(project.root, 'tsconfig.json');
   logger.info(`Merged tsConfig content: ${JSON.stringify(tsConfig, null, 2)}`);
