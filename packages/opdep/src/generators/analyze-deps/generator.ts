@@ -232,6 +232,10 @@ function analyzeImport(
       const project = importDecl?.getSourceFile().getProject();
       const sourceFile = project?.getSourceFile(fullPath);
 
+      if (!sourceFile) {
+        logger.info(`Could not find source file for alias import: ${moduleSpecifier}(${fullPath})`);
+      }
+
       if (sourceFile) {
         if (depth > 0) {
           logger.info(`Recursively exploring file: ${sourceFile.getFilePath()}`);
