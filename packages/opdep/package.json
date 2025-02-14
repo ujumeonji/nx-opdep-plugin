@@ -1,6 +1,6 @@
 {
   "name": "@otter.moon/nx-opdep",
-  "version": "0.0.35",
+  "version": "0.0.36",
   "description": "Nx plugin for analyzing and optimizing dependencies",
   "keywords": [
     "nx",
