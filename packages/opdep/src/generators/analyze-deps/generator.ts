@@ -399,8 +399,7 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
   const workspaceRoot = tree.root;
   const projectSourceFiles = tsProject.addSourceFilesAtPaths([
     path.join(project.root, '**/*.ts'),
-    path.join(project.root, '**/*.tsx'),
-    path.join(workspaceRoot, 'libs/', '**/*.ts'),
+    ...options.targetLibs?.map(lib => path.join(workspaceRoot, lib)) ?? [],
     `!${path.join(project.root, 'node_modules/**/*')}`,
     `!${path.join(project.root, 'dist/**/*')}`,
     `!${path.join(project.root, 'build/**/*')}`,

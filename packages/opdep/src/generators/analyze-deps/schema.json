@@ -18,6 +18,14 @@
       "description": "The path where the optimized package.json should be generated",
       "default": "optimized-package.json"
     },
+    "targetLibs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of specific libraries to analyze. If not provided, all libraries will be analyzed.",
+      "default": []
+    },
     "internalModulePatterns": {
       "type": "array",
       "items": {
