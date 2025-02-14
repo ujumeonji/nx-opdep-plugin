@@ -401,7 +401,6 @@ export async function analyzeDepsGenerator(tree: Tree, options: AnalyzeDepsGener
     path.join(project.root, '**/*.ts'),
     path.join(project.root, '**/*.tsx'),
     path.join(workspaceRoot, 'libs/', '**/*.ts'),
-    path.join(workspaceRoot, 'libs/', '**/*.tsx'),
     `!${path.join(project.root, 'node_modules/**/*')}`,
     `!${path.join(project.root, 'dist/**/*')}`,
     `!${path.join(project.root, 'build/**/*')}`,
