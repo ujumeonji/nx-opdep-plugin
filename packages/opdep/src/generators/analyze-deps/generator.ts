@@ -230,10 +230,7 @@ function analyzeImport(
       logger.info(`Resolving alias import: ${moduleSpecifier} -> ${fullPath}`);
 
       const project = importDecl?.getSourceFile().getProject();
-      let sourceFile = project?.getSourceFile(fullPath + '.ts');
-      if (!sourceFile) {
-        sourceFile = project?.getSourceFile(fullPath + '.tsx');
-      }
+      const sourceFile = project?.getSourceFile(fullPath);
 
       if (sourceFile) {
         if (depth > 0) {
