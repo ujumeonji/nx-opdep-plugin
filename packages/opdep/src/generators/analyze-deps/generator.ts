@@ -1,10 +1,7 @@
-import type { Tree } from "@nx/devkit";
-import { formatFiles, getProjects, logger } from "@nx/devkit";
+import { formatFiles, getProjects, logger, type Tree } from "@nx/devkit";
 import type { AnalyzeDepsGeneratorSchema } from "./schema";
-import { Project, type ImportDeclaration } from "ts-morph";
+import { Project, type ImportDeclaration, type ProjectOptions } from "ts-morph";
 import * as path from "node:path";
-import type { CompilerOptions } from "typescript";
-import type { ProjectOptions } from "ts-morph";
 
 /**
  * Interface representing a package.json file
