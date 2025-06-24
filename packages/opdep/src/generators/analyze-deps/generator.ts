@@ -678,7 +678,7 @@ class DependencyAnalyzer {
 	public writeOutput(projectRoot: string): void {
 		const { usedDependencies, usedDevDependencies } =
 			this.getUsedDependencies();
-		const outputPath = path.join(projectRoot, "opdep.json");
+		const outputPath = path.join(projectRoot, "package.json");
 		const output = {
 			dependencies: usedDependencies,
 			devDependencies: usedDevDependencies,
