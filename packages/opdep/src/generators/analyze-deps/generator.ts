@@ -874,12 +874,12 @@ class DependencyAnalysisService {
 
 		// Create optimized package.json if requested
 		if (options.optimizePackageJson !== false) {
-			analyzer.createOptimizedPackageJson(workspaceRoot);
+			analyzer.createOptimizedPackageJson(projectRoot);
 		}
 
 		// Replace original package.json if requested
 		if (options.replaceOriginal === true) {
-			analyzer.replaceOriginalPackageJson(workspaceRoot);
+			analyzer.replaceOriginalPackageJson(projectRoot);
 		}
 
 		await formatFiles(this.tree);
