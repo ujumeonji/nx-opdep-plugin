@@ -41,6 +41,16 @@
       },
       "description": "Custom patterns to identify module aliases (supports glob patterns)",
       "default": []
+    },
+    "optimizePackageJson": {
+      "type": "boolean",
+      "description": "Create an optimized package.json file with only used dependencies",
+      "default": true
+    },
+    "replaceOriginal": {
+      "type": "boolean",
+      "description": "Replace the original package.json with optimized dependencies (creates a backup)",
+      "default": false
     }
   },
   "required": ["projectName"]

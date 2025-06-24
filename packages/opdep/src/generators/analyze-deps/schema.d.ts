@@ -4,4 +4,6 @@ export interface AnalyzeDepsGeneratorSchema {
   targetLibs?: string[];
   internalModulePatterns?: string[];
   aliasPatterns?: string[];
+  optimizePackageJson?: boolean;
+  replaceOriginal?: boolean;
 }

@@ -678,7 +678,7 @@ class DependencyAnalyzer {
 	public writeOutput(projectRoot: string): void {
 		const { usedDependencies, usedDevDependencies } =
 			this.getUsedDependencies();
-		const outputPath = path.join(projectRoot, "package.json");
+		const outputPath = path.join(projectRoot, "opdep.json");
 		const output = {
 			dependencies: usedDependencies,
 			devDependencies: usedDevDependencies,
@@ -693,6 +693,66 @@ class DependencyAnalyzer {
 			},
 		};
 		this.fileSystemManager.writeJsonToTree(outputPath, output);
+	}
+
+	/**
+	 * 사용된 의존성만을 포함하는 최적화된 package.json을 생성합니다
+	 * Creates an optimized package.json with only used dependencies
+	 * @param projectRoot 프로젝트의 루트 경로
+	 */
+	public createOptimizedPackageJson(projectRoot: string): void {
+		const { usedDependencies, usedDevDependencies } = this.getUsedDependencies();
+		const originalPackageJsonPath = path.join(projectRoot, "package.json");
+		const optimizedPackageJsonPath = path.join(projectRoot, "optimized-package.json");
+
+		// Read the original package.json to preserve its structure
+		const originalPackageJson = this.fileSystemManager.readJsonFromTree<PackageJson>(originalPackageJsonPath);
+
+		// Create optimized version while preserving all other fields
+		const optimizedPackageJson = {
+			...originalPackageJson,
+			dependencies: usedDependencies,
+			devDependencies: usedDevDependencies,
+		};
+
+		// Write the optimized package.json
+		this.fileSystemManager.writeJsonToTree(optimizedPackageJsonPath, optimizedPackageJson);
+
+		logger.info(`Created optimized package.json at ${optimizedPackageJsonPath}`);
+		logger.info(`Optimized dependencies: ${Object.keys(usedDependencies).length} packages`);
+		logger.info(`Optimized devDependencies: ${Object.keys(usedDevDependencies).length} packages`);
+	}
+
+	/**
+	 * 원본 package.json을 최적화된 의존성으로 교체합니다 (백업 생성)
+	 * Replaces the original package.json with optimized dependencies
+	 * @param projectRoot 프로젝트의 루트 경로
+	 */
+	public replaceOriginalPackageJson(projectRoot: string): void {
+		const { usedDependencies, usedDevDependencies } = this.getUsedDependencies();
+		const packageJsonPath = path.join(projectRoot, "package.json");
+
+		// Read the original package.json to preserve its structure
+		const originalPackageJson = this.fileSystemManager.readJsonFromTree<PackageJson>(packageJsonPath);
+
+		// Create backup of original package.json
+		const backupPath = path.join(projectRoot, "package.json.backup");
+		this.fileSystemManager.writeJsonToTree(backupPath, originalPackageJson);
+		logger.info(`Created backup of original package.json at ${backupPath}`);
+
+		// Update with optimized dependencies while preserving all other fields
+		const optimizedPackageJson = {
+			...originalPackageJson,
+			dependencies: usedDependencies,
+			devDependencies: usedDevDependencies,
+		};
+
+		// Replace the original package.json
+		this.fileSystemManager.writeJsonToTree(packageJsonPath, optimizedPackageJson);
+
+		logger.info(`Updated original package.json with optimized dependencies`);
+		logger.info(`Optimized dependencies: ${Object.keys(usedDependencies).length} packages`);
+		logger.info(`Optimized devDependencies: ${Object.keys(usedDevDependencies).length} packages`);
 	}
 }
 
@@ -809,7 +869,19 @@ class DependencyAnalysisService {
 		);
 		logger.info(`Analyzed ${analyzer.analyzedPaths.size} paths`);
 
+		// Write analysis output
 		analyzer.writeOutput(projectRoot);
+
+		// Create optimized package.json if requested
+		if (options.optimizePackageJson !== false) {
+			analyzer.createOptimizedPackageJson(projectRoot);
+		}
+
+		// Replace original package.json if requested
+		if (options.replaceOriginal === true) {
+			analyzer.replaceOriginalPackageJson(projectRoot);
+		}
+
 		await formatFiles(this.tree);
 
 		const { usedDependencies, usedDevDependencies } =
